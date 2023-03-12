@@ -1,8 +1,8 @@
 # Timer Event Package
 
-The Timer Event package provides classes for creating timed events and subscribing to them. The package includes the following classes:
- *TimerEvent:* A class for creating timed events that trigger at a specified interval.\
- *Event:* A class for creating events that can be subscribed to and triggered with a payload.
+The Timer Event package provides classes for creating timed events and subscribing to them. The package includes the following classes:\
+*TimerEvent:* A class for creating timed events that trigger at a specified interval.\
+*Event:* A class for creating events that can be subscribed to and triggered with a payload.
 
 ## **TimerEvent:**
 
