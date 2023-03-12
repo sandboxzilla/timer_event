@@ -1,0 +1,8 @@
+__pycache__/
+.venv/
+.vscode/
+.git/
+.space.kts
+settings.json
+.mypy_cache
+timer_event.code-workspace
