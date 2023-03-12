@@ -20,9 +20,9 @@
 __author__ = "Erol Yesin"
 version = "0.7"
 
-from threading import Thread, Lock
-from queue import Queue
 from typing import Any, Union
+from queue import Queue
+from threading import Thread, Lock
 
 
 class Event(Thread):
