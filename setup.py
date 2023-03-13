@@ -11,7 +11,7 @@ setup(
     author="Erol Yesin",
     author_email='erol@sandboxzilla.com',
     description='The Timer Event package provides classes for creating timed threaded events',
-    download_url='https://github.com/erolyesin/timer_event/archive/refs/tags/v0.07-beta.tar.gz',
+    download_url='https://github.com/erolyesin/timer_event/archive/refs/tags/v0.07.02-beta.tar.gz',
     keywords=['Event', 'Thread', 'Timer'],
     install_requires=[],
     classifiers=[
