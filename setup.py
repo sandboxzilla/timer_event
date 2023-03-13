@@ -6,7 +6,7 @@ from setuptools import find_packages
 setup(
     name='TimerEvent',
     packages=find_packages('src'),
-    version='0.7',
+    version='0.07.02',
     license='MIT',
     author="Erol Yesin",
     author_email='erol@sandboxzilla.com',
