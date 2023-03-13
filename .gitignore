@@ -6,3 +6,4 @@ __pycache__/
 settings.json
 .mypy_cache
 timer_event.code-workspace
+.gitignore
