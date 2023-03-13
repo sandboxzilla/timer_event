@@ -1,7 +1,7 @@
 # Timer Event Package
 
-The Timer Event package provides classes for creating timed threaded events and subscribing to them. The package includes the following classes:
-*TimerEvent:* A class for creating timed events that trigger at a specified interval.
+The Timer Event package provides classes for creating timed events and subscribing to them. The package includes the following classes:\
+*TimerEvent:* A class for creating timed events that trigger at a specified interval.\
 *Event:* A class for creating events that can be subscribed to and triggered with a payload.
 
 ## **TimerEvent:**
@@ -10,10 +10,10 @@ The TimerEvent class creates a timed event that triggers at a specified interval
 
 The  TimerEvent class has the following methods::
 
- subscribe(name: str, on_event: callable): Subscribes to the timed event with a callback function.
- unsubscribe(name: str): Unsubscribes from the timed event.
- start(): Starts the timed event.
- stop(): Stops the timed event.
+ *subscribe(name: str, on_event: callable):* Subscribes to the timed event with a callback function.\
+ *unsubscribe(name: str):* Unsubscribes from the timed event.\
+ *start():* Starts the timed event.\
+ *stop():* Stops the timed event.
 
 ## **Event:**
 
@@ -21,10 +21,10 @@ The Event class creates an event that can be subscribed to and triggered with a 
 
 The Event class has the following methods::
 
- subscribe(name: str, on_event: callable): Subscribes to the event with a callback function.
- unsubscribe(name: str): Unsubscribes from the event.
- post(payload, \*\*kwargs): Posts an event with a payload to the subscribers.
- stop(): Stops the event.
+ *subscribe(name: str, on_event: callable):* Subscribes to the event with a callback function.\
+ *unsubscribe(name: str):* Unsubscribes from the event.\
+ *post(payload, \*\*kwargs):* Posts an event with a payload to the subscribers.\
+ *stop():* Stops the event.
  
  ## Example Usage::
 
