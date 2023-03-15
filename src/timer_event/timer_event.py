@@ -17,6 +17,33 @@
 #
 
 __author__ = "Erol Yesin"
+__version__ = "0.7.3"
+"""
+This module provides a TimerEvent class that inherits from the Event class to create a repeated timer feature.
+
+Author: Erol Yesin
+Version: 0.07.02
+
+Classes:
+    TimerEvent: A class that inherits from Event to create a repeated timer feature.
+
+Example:
+    >>> from time import sleep
+    >>> def print_time(packet):
+    ...     print(f"Current time: {packet['payload']}")
+    ...
+    >>> timer_event = TimerEvent(interval=1.0)
+    >>> timer_event.subscribe("time_printer", print_time)
+    >>> sleep(5)
+    Current time: 1619443204.035818
+    Current time: 1619443205.036033
+    Current time: 1619443206.036167
+    Current time: 1619443207.036299
+    Current time: 1619443208.036424
+    >>> timer_event.unsubscribe("time_printer")
+    >>> timer_event.stop()
+"""
+
 
 from threading import Timer
 from threading import Event as Done
@@ -67,7 +94,7 @@ class TimerEvent(Event):
 
     def stop(self):
         """
-        Stops the timer.
+        Stops the timer and joins the internal timer thread.
 
         Returns:
             None
