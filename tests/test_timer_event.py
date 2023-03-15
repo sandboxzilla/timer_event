@@ -15,16 +15,8 @@
 #  SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 #
-import os
-import inspect
 import time
 import unittest
-
-currentdir = os.path.dirname(os.path.abspath(
-    inspect.getfile(inspect.currentframe())))
-parentdir = os.path.dirname(currentdir) + '/src'
-os.sys.path.insert(0, parentdir)
-
 from timer_event.timer_event import TimerEvent
 
 
