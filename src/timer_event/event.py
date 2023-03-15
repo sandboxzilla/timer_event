@@ -18,7 +18,28 @@
 #
 
 __author__ = "Erol Yesin"
-version = "0.7"
+__version__ = "0.7.3"
+"""
+This module provides a thread-safe Event class for managing and triggering events with callback routines.
+
+Author: Erol Yesin
+Version: 0.07.02
+
+Classes:
+    Event: A class for creating and managing events with callback routines.
+
+Example:
+    >>> def my_callback(packet):
+    ... print(packet["payload"])
+    ...
+    >>> event = Event("example")
+    >>> event.subscribe("example_subscriber", my_callback)
+    >>> event.post("Hello, world!")
+    Hello, world!
+    >>> event.unsubscribe("example_subscriber")
+    >>> event.post("This won't be printed")
+"""
+
 
 from typing import Any, Union
 from queue import Queue
@@ -130,8 +151,13 @@ class Event(Thread):
         """
         Puts an event payload in to the process queue.
 
+
+        Args:
+            payload: The payload for the event.
+            **kwargs: Optional keyword arguments to update the event packet.
+
         Returns:
-            self
+            Event: The Event object.
         """
         with self.__lock:
             packet = self.__packet.copy()
@@ -141,9 +167,28 @@ class Event(Thread):
         return self
 
     def __call__(self, payload, **kwargs):
+        """
+        Calls an event with a payload and optional arguments.
+
+        Args:
+            payload: The payload for the event.
+            **kwargs: Optional keyword arguments to update the event packet.
+
+        Returns:
+            Event: The Event object.
+        """
         return self.post(payload=payload, **kwargs)
 
     def __iadd__(self, handler: Union[dict, callable]):
+        """
+        Adds a callback routine to an event using the "+=" operator.
+
+        Args:
+            handler (Union[dict, callable]): A dictionary containing the callback routine's details or a callable object.
+
+        Returns:
+            Event: The Event object.
+        """
         with self.__lock:
             if isinstance(handler, dict):
                 if 'on_event' not in handler or not callable(handler["on_event"]):
@@ -160,6 +205,15 @@ class Event(Thread):
         return self
 
     def __isub__(self, handler: Union[dict, callable, str]):
+        """
+        Removes a callback routine from an event using the "-=" operator.
+
+        Args:
+            handler (Union[dict, callable, str]): A dictionary containing the callback routine's details, a callable object, or a string representing the name of the handler.
+
+        Returns:
+            Event: The Event object.
+        """
         with self.__lock:
             if isinstance(handler, dict):
                 handler = handler["name"]
@@ -169,6 +223,12 @@ class Event(Thread):
         return self
 
     def stop(self):
+        """
+        Stops the event processing thread, clears the subscribers list, and joins the thread.
+
+        Returns:
+            None
+        """
         if self.__continue_thread:
             self.__continue_thread = False
             self.post(None)

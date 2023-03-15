@@ -2,6 +2,8 @@ __pycache__/
 .venv/
 .vscode/
 .git/
+dist/
+*.egg-info/
 .space.kts
 settings.json
 .mypy_cache
