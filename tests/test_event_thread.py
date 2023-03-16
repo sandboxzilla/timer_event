@@ -15,12 +15,23 @@
 #  SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #
 #
+import os
+import inspect
 import unittest
 
-from timer_event.event import Event
+
+currentdir = os.path.dirname(os.path.abspath(
+    inspect.getfile(inspect.currentframe())))
+parentdir = os.path.dirname(currentdir) + '/src'
+os.sys.path.insert(0, parentdir)
+parentdir = parentdir + '/timer_event'
+os.sys.path.insert(0, parentdir)
 
 
-class TestEvent(unittest.TestCase):
+from timer_event import EventThread
+
+
+class TestEventThread(unittest.TestCase):
     """
     This class contains unit tests for the Event class. The tests include testing the subscription and unsubscription of
     subscribers, posting events with payloads, and adding and removing subscribers using the += and -= operators.
@@ -32,7 +43,7 @@ class TestEvent(unittest.TestCase):
         function, posts an event with a payload, and then removes the subscriber. The test asserts that the payload received by
         the subscriber's callback function is equal to the expected payload.
         """
-        event = Event("test_event")
+        te = EventThread("test_event")
 
         def on_event(payload):
             """
@@ -40,9 +51,9 @@ class TestEvent(unittest.TestCase):
             is equal to the expected payload.
             """
             self.assertEqual(payload, "test_payload")
-        event.subscribe("test_subscriber", on_event)
-        event.post("test_payload")
-        event.unsubscribe("test_subscriber")
+        te.subscribe("test_subscriber", on_event)
+        te.post("test_payload")
+        te.unsubscribe("test_subscriber")
 
     def test_post(self):
         """
@@ -50,7 +61,7 @@ class TestEvent(unittest.TestCase):
         callback function, posts an event with a payload, and then removes the subscriber. The test asserts that the payload
         received by the subscriber's callback function is equal to the expected payload.
         """
-        event = Event("test_event")
+        te = EventThread("test_event")
 
         def on_event(payload):
             """
@@ -58,9 +69,9 @@ class TestEvent(unittest.TestCase):
             is equal to the expected payload.
             """
             self.assertEqual(payload, "test_payload")
-        event.subscribe("test_subscriber", on_event)
-        event.post("test_payload")
-        event.unsubscribe("test_subscriber")
+        te.subscribe("test_subscriber", on_event)
+        te.post("test_payload")
+        te.unsubscribe("test_subscriber")
 
     def test_iadd(self):
         """
@@ -68,7 +79,7 @@ class TestEvent(unittest.TestCase):
         with a callback function, posts an event with a payload, and then removes the subscriber using the -= operator. The test
         asserts that the payload received by the subscriber's callback function is equal to the expected payload.
         """
-        event = Event("test_event")
+        te =EventThread("test_event")
 
         def on_event(payload):
             """
@@ -76,9 +87,9 @@ class TestEvent(unittest.TestCase):
             is equal to the expected payload.
             """
             self.assertEqual(payload, "test_payload")
-        event += {"name": "test_subscriber", "on_event": on_event}
-        event.post("test_payload")
-        event -= "test_subscriber"
+        te += {"name": "test_subscriber", "on_event": on_event}
+        te.post("test_payload")
+        te -= "test_subscriber"
 
     def test_isub(self):
         """
@@ -87,7 +98,7 @@ class TestEvent(unittest.TestCase):
         name and callback function. The test asserts that the payload received by the subscriber's callback function is equal to
         the expected payload.
         """
-        event = Event("test_event")
+        te = EventThread("test_event")
 
         def on_event(payload):
             """
@@ -95,9 +106,9 @@ class TestEvent(unittest.TestCase):
             is equal to the expected payload.
             """
             self.assertEqual(payload, "test_payload")
-        event += {"name": "test_subscriber", "on_event": on_event}
-        event.post("test_payload")
-        event -= {"name": "test_subscriber", "on_event": on_event}
+        te += {"name": "test_subscriber", "on_event": on_event}
+        te.post("test_payload")
+        te -= {"name": "test_subscriber", "on_event": on_event}
 
 
 if __name__ == '__main__':
