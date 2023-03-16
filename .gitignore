@@ -9,5 +9,3 @@ settings.json
 .mypy_cache
 timer_event.code-workspace
 .gitignore
-timer_event/.mypy_cache
-timer_event/src
