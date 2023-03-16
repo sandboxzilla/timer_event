@@ -44,7 +44,7 @@ Example:
     DEALINGS IN THE SOFTWARE.
 
 """
-from event_thread import EventThread
+from .event_thread import EventThread
 from threading import Timer
 from threading import Event as Done
 from time import time
@@ -91,7 +91,8 @@ class TimerEvent(EventThread):
         self.__interval = interval
         self.__done = Done()
         super().__init__(name=name, interval=interval, **self.__kwargs)
-        self.__timer = Timer(interval=interval, function=self.__target, **self.__kwargs)
+        self.__timer = Timer(
+            interval=interval, function=self.__target, **self.__kwargs)
         self.__timer.start()
 
     def __target(self):
@@ -120,7 +121,7 @@ class TimerEvent(EventThread):
 
 if __name__ == "__main__":
     from time import sleep
-    
+
     def print_time(packet):
         print(f"Current time: {packet['payload']}")
 
