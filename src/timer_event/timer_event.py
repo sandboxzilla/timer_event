@@ -1,59 +1,73 @@
 #!/bin/python3
-#
-#  Copyright (c) 2023  Erol Yesin/SandboxZilla
-#
-#  Permission is hereby granted, free of charge, to any person obtaining a copy of this
-#  software and associated documentation files (the "Software"), to deal in the Software
-#  without restriction, including without limitation the rights to use, copy, modify,
-#  merge, publish, distribute, sublicense, and/or sell copies of the Software, and to
-#  permit persons to whom the Software is furnished to do so.
-#
-#  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED,
-#  INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-#  PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT
-#  HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-#  OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
-#  SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-#
-
-__author__ = "Erol Yesin"
-__version__ = "0.7.3"
 """
 This module provides a TimerEvent class that inherits from the Event class to create a repeated timer feature.
 
 Author: Erol Yesin
-Version: 0.07.02
+Version: 0.8.2
 
 Classes:
     TimerEvent: A class that inherits from Event to create a repeated timer feature.
 
 Example:
     >>> from time import sleep
-    >>> def print_time(packet):
-    ...     print(f"Current time: {packet['payload']}")
     ...
-    >>> timer_event = TimerEvent(interval=1.0)
-    >>> timer_event.subscribe("time_printer", print_time)
-    >>> sleep(5)
+    >>> def print_time(packet):
+    ...... print(f"Current time: {packet['payload']}")
+    ...
+    >>> te = TimerEvent(interval=0.5)
+    >>> te.subscribe("time_printer", print_time)
+    >>> sleep(3)
     Current time: 1619443204.035818
-    Current time: 1619443205.036033
-    Current time: 1619443206.036167
-    Current time: 1619443207.036299
-    Current time: 1619443208.036424
-    >>> timer_event.unsubscribe("time_printer")
-    >>> timer_event.stop()
+    Current time: 1619443204.536033
+    Current time: 1619443205.036167
+    Current time: 1619443205.536299
+    Current time: 1619443206.036424
+    Current time: 1619443206.536167
+    >>> te.unsubscribe("time_printer")
+    >>> te.stop()
+
+    Copyright (c) 2023.  Erol Yesin/SandboxZilla
+
+    Permission is hereby granted, free of charge, to any person obtaining a
+    copy of this software and associated documentation files (the "Software"),
+    to deal in the Software without restriction, including without limitation
+    the rights to use, copy, modify, merge, publish, distribute, sublicense,
+    and/or sell copies of the Software, and to permit persons to whom the
+    Software is furnished to do so.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
+    MPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+    DEALINGS IN THE SOFTWARE.
+
 """
-
-
+from .event_thread import EventThread
 from threading import Timer
 from threading import Event as Done
 from time import time
-from .event import Event
+
+__author__ = "Erol Yesin"
+__version__ = "0.8.2"
 
 
-class TimerEvent(Event):
+class TimerEvent(EventThread):
     """
-    A class that inherits from time.Timer to create a repeated timer feature.
+    A class that extends Event to create a timer events.
+    Attributes:
+        __done (threading.Event): Event class from the build-in threading package.  Provides blocking until timed event is posted.
+        __timer (threading.Timer): Timer class from the build-in threading package.  The actual timer heartbeat
+
+    Methods:
+        __target():
+            The internal timer thread loop.  Used by the Timer to post a timed events.
+        stop():
+            Stops the timer and joins the internal timer thread.
+            Note:   Once the TimerEvent instance is stopped it can not be restarted.
+                    A new instance must be created after calling stop to continue eventing, and the subscribers must resubscribe.
+                    If pause is the intention, use the 'pause' method.
     """
 
     def __init__(self, interval: float, name: str = None, **kwargs):
@@ -76,13 +90,14 @@ class TimerEvent(Event):
             name = f"{interval}sRepeatingTimer"
         self.__interval = interval
         self.__done = Done()
-        super().__init__(name=name, interval=self.__interval, **self.__kwargs)
-        self.__timer = Timer(interval=self.__interval, function=self.__target, **self.__kwargs)
+        super().__init__(name=name, interval=interval, **self.__kwargs)
+        self.__timer = Timer(
+            interval=interval, function=self.__target, **self.__kwargs)
         self.__timer.start()
 
     def __target(self):
         """
-        The internal timer method.  
+        The internal timer thread loop.  
         Used by the Timer to initiate a timed event.
 
         Returns:
@@ -90,7 +105,7 @@ class TimerEvent(Event):
         """
         while not self.__done.is_set():
             self.post(time())
-            self.__done.wait(self. __interval)
+            self.__done.wait(self.__interval)
 
     def stop(self):
         """
@@ -102,3 +117,16 @@ class TimerEvent(Event):
         self.__done.set()
         super().stop()
         self.__timer.join()
+
+
+if __name__ == "__main__":
+    from time import sleep
+
+    def print_time(packet):
+        print(f"Current time: {packet['payload']}")
+
+    te = TimerEvent(interval=0.5)
+    te.subscribe("time_printer", print_time)
+    sleep(3)
+    te.unsubscribe("time_printer")
+    te.stop()

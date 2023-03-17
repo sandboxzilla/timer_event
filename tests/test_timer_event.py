@@ -16,9 +16,19 @@
 #
 #
 import time
+import os
+import inspect
 import unittest
-from timer_event.timer_event import TimerEvent
 
+currentdir = os.path.dirname(os.path.abspath(
+    inspect.getfile(inspect.currentframe())))
+parentdir = os.path.dirname(currentdir) + '/src'
+os.sys.path.insert(0, parentdir)
+parentdir = parentdir + '/timer_event'
+os.sys.path.insert(0, parentdir)
+
+
+from timer_event import TimerEvent
 
 class TestTimerEvent(unittest.TestCase):
     """
@@ -60,6 +70,55 @@ class TestTimerEvent(unittest.TestCase):
         self.assertAlmostEqual(abs(NOW1 - then), 1.0, delta=1.00001)
         self.assertAlmostEqual(abs(NOW2 - then), 1.0, delta=1.00001)
         self.assertAlmostEqual(abs(NOW1 - NOW2), 0.0, delta=0.00001)
+        te.stop()
+
+    def test_pause(self):
+        """
+        Test the pausing and unpasing of a TimerEvent object. The test creates a TimerEvent object with a 1 second interval, pauses the event postings,
+        and asserts that the timer is no longer posting.  Than unpauses and asserts that it;s posting again.
+        """
+        global NOW
+        NOW = 0.0
+
+        def on_event(packet):
+            global NOW
+            NOW = packet["payload"]
+
+        te = TimerEvent(interval=1.0, name="test_pause")
+        te.subscribe(name="timer1", on_event=on_event)
+        time.time()
+        stop = time.time() + 15
+        now = 0.0
+        start = 0.0
+        while now < stop:
+            # sync the two threads
+            # tight loop until NOW has a legit time
+            if NOW == 0.0:
+                continue
+            elif start == 0.0:
+                start = time.time()
+                time.sleep(0.25)
+                now = time.time()
+                self.assertAlmostEqual(
+                    abs(NOW - start), 0.0, delta=1.059)
+                self.assertAlmostEqual(
+                    abs(NOW - now), 0.25, delta=1.059)
+            else:
+                now = time.time()
+                time.sleep(0.1)
+                if 5.0 <= (now-start) < 5.2:
+                    self.assertAlmostEqual(
+                        abs(NOW - now), 0.0, delta=1.001)
+                    te.pause()
+                elif 8.0 <= (now-start) < 8.2:
+                    self.assertAlmostEqual(
+                        abs(NOW - now), 4.0, delta=1.001)
+                    te.unpause()
+                elif 10.0 <= (now-start) < 10.5:
+                    self.assertAlmostEqual(
+                        abs(NOW - now), 0.0, delta=1.001)
+                    break
+
         te.stop()
 
     def test_stop(self):
