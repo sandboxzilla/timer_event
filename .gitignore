@@ -7,5 +7,5 @@ dist/
 .space.kts
 settings.json
 .mypy_cache
-timer_event.code-workspace
+*.code-workspace
 .gitignore
