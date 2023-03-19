@@ -1,24 +1,24 @@
 # Timer Event Package
 
-This package provides two classes for working with events:\
-\
+This package provides two classes for working with events:
+
 *1. EventThread:* A class for creating and managing events with callback routines.\
-    This class can be used independently of TimerEvent for handling general event-driven scenarios without any time-based requirements.\
+    This class can be used independently of TimerEvent for handling general event-driven scenarios without any time-based requirements.
 
 *2.  TimerEvent:* A class that extends EventThread to create timer-based 
     events.\
     This class is specifically designed for scenarios where events are triggered after a certain period of time or at specific intervals.\
-    **Note:**   Since this class extends the EventThread class it uses most all methods defined and documented in EvenThread class.\
+    **Note:**   Since this class extends the EventThread class it uses most all methods defined and documented in EvenThread class.
 
 ## **EventThread:**
 
-The EventThread class creates an event that can be subscribed to and triggered with a payload. The class uses its own thread to broadcast events to subscribers.  The callback function is called when the event is triggered with a payload.\
+The EventThread class creates an event that can be subscribed to and triggered with a payload. The class uses its own thread to broadcast events to subscribers.  The callback function is called when the event is triggered with a payload.
 
-The packet dictionary is passed to the callback.\
-The packet dictionary includes:\
+The packet dictionary is passed to the callback.
+The packet dictionary includes:
 > All parameters passed in during instantiation of the EventThread.
 > Minimum items included: ..
-    "event" =   The event name\
+    "event" =   The event name
     "dest"  =   The subscriber name provided when subscribing\
     "payload" = The object included in the post\
     "cookie" =  The cookie if included when subscribing, otherwise None
@@ -44,6 +44,7 @@ The  TimerEvent class has the following methods::
 
  ## Example Usage::
 <code>
+
     from timer_event import TimerEvent, EventThread
     import time
 
@@ -77,4 +78,5 @@ The  TimerEvent class has the following methods::
     # Stop the TimerEvent and Event
     te.stop()
     event.stop()
+    
 </code>
