@@ -1,10 +1,37 @@
 # Timer Event Package
 
-The Timer Event package provides classes for creating timed events and subscribing to them. The package includes the following classes:\
-*TimerEvent:* A class for creating timed events that trigger at a specified interval.\
-*Event:* A class for creating events that can be subscribed to and triggered with a payload.
+This package provides two classes for working with events:\
+\
+*1. EventThread:* A class for creating and managing events with callback routines.\
+    This class can be used independently of TimerEvent for handling general event-driven scenarios without any time-based requirements.\
 
-## **TimerEvent:**
+*2.  TimerEvent:* A class that extends EventThread to create timer-based 
+    events.\
+    This class is specifically designed for scenarios where events are triggered after a certain period of time or at specific intervals.\
+    **Note:**   Since this class extends the EventThread class it uses most all methods defined and documented in EvenThread class.\
+
+## **EventThread:**
+
+The EventThread class creates an event that can be subscribed to and triggered with a payload. The class uses its own thread to broadcast events to subscribers.  The callback function is called when the event is triggered with a payload.\
+
+The packet dictionary is passed to the callback.\
+The packet dictionary includes:\
+> All parameters passed in during instantiation of the EventThread.
+> Minimum items included: ..
+    "event" =   The event name\
+    "dest"  =   The subscriber name provided when subscribing\
+    "payload" = The object included in the post\
+    "cookie" =  The cookie if included when subscribing, otherwise None
+
+
+The EventThread class has the following methods::
+
+ *subscribe(name: str, on_event: callable):* Subscribes to the event with a callback function.\
+ *unsubscribe(name: str):* Unsubscribes from the event.\
+ *post(payload, \*\*kwargs):* Posts an event with a payload to the subscribers.\
+ *stop():* Stops the event.
+ 
+ ## **TimerEvent:**
 
 The TimerEvent class creates a timed event that triggers at a specified interval. The class uses a Timer object to initiate the timed event. The TimerEvent class can be subscribed to using the subscribe method, which takes a name and a callback function as arguments. The callback function is executed when the timed event is triggered.
 
@@ -13,22 +40,11 @@ The  TimerEvent class has the following methods::
  *subscribe(name: str, on_event: callable):* Subscribes to the timed event with a callback function.\
  *unsubscribe(name: str):* Unsubscribes from the timed event.\
  *start():* Starts the timed event.\
- *stop():* Stops the timed event.
+ *stop():* Stops the timed event.\
 
-## **Event:**
-
-The Event class creates an event that can be subscribed to and triggered with a payload. The class uses a thread to post events to subscribers. The Event class can be subscribed to using the subscribe method, which takes a name and a callback function as arguments. The callback function is executed when the event is triggered with a payload.
-
-The Event class has the following methods::
-
- *subscribe(name: str, on_event: callable):* Subscribes to the event with a callback function.\
- *unsubscribe(name: str):* Unsubscribes from the event.\
- *post(payload, \*\*kwargs):* Posts an event with a payload to the subscribers.\
- *stop():* Stops the event.
- 
  ## Example Usage::
-
-    from timer_event import TimerEvent, Event
+<code>
+    from timer_event import TimerEvent, EventThread
     import time
 
      # Create a TimerEvent that triggers every 5 seconds
@@ -44,7 +60,7 @@ The Event class has the following methods::
     te.start()
 
     # Create an Event
-    event = Event("test_event")
+    event = EventThread("test_event")
 
     # Subscribe to the Event
     def ev_on_event(payload):
@@ -61,3 +77,4 @@ The Event class has the following methods::
     # Stop the TimerEvent and Event
     te.stop()
     event.stop()
+</code>

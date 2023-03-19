@@ -1,30 +1,31 @@
 #!/bin/python3
 """
-This module provides a TimerEvent class that inherits from the Event class to create a repeated timer feature.
+This module provides a TimerEvent class that inherits from the Event class to 
+create a repeated timer feature.
 
 Author: Erol Yesin
-Version: 0.8.2
+Version: 0.8.3
 
 Classes:
-    TimerEvent: A class that inherits from Event to create a repeated timer feature.
-
-Example:
-    >>> from time import sleep
-    ...
-    >>> def print_time(packet):
-    ...... print(f"Current time: {packet['payload']}")
-    ...
-    >>> te = TimerEvent(interval=0.5)
-    >>> te.subscribe("time_printer", print_time)
-    >>> sleep(3)
-    Current time: 1619443204.035818
-    Current time: 1619443204.536033
-    Current time: 1619443205.036167
-    Current time: 1619443205.536299
-    Current time: 1619443206.036424
-    Current time: 1619443206.536167
-    >>> te.unsubscribe("time_printer")
-    >>> te.stop()
+    TimerEvent:     A class that inherits from EventThread to create a repeated
+                    timer feature.
+    Example:
+        >>> from time import sleep
+        ...
+        >>> def print_time(packet):
+        ...... print(f"Current time: {packet['payload']}")
+        ...
+        >>> te = TimerEvent(interval=0.5)
+        >>> te.subscribe("time_printer", print_time)
+        >>> sleep(3)
+        Current time: 1619443204.035818
+        Current time: 1619443204.536033
+        Current time: 1619443205.036167
+        Current time: 1619443205.536299
+        Current time: 1619443206.036424
+        Current time: 1619443206.536167
+        >>> te.unsubscribe("time_printer")
+        >>> te.stop()
 
     Copyright (c) 2023.  Erol Yesin/SandboxZilla
 
@@ -35,8 +36,8 @@ Example:
     and/or sell copies of the Software, and to permit persons to whom the
     Software is furnished to do so.
 
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR I
-    MPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
     FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
     AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
     LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
@@ -50,24 +51,29 @@ from threading import Event as Done
 from time import time
 
 __author__ = "Erol Yesin"
-__version__ = "0.8.2"
+__version__ = "0.8.3"
 
 
 class TimerEvent(EventThread):
     """
-    A class that extends Event to create a timer events.
+    A class that extends EventThread to create a timer events.
     Attributes:
-        __done (threading.Event): Event class from the build-in threading package.  Provides blocking until timed event is posted.
-        __timer (threading.Timer): Timer class from the build-in threading package.  The actual timer heartbeat
+        __done (threading.Event):   Event class from the build-in threading 
+                                    package.  Provides blocking until timed 
+                                    event is posted.
+        __timer (threading.Timer):  Timer class from the build-in threading 
+                                    package.  The actual timer heartbeat
 
     Methods:
-        __target():
-            The internal timer thread loop.  Used by the Timer to post a timed events.
         stop():
             Stops the timer and joins the internal timer thread.
             Note:   Once the TimerEvent instance is stopped it can not be restarted.
-                    A new instance must be created after calling stop to continue eventing, and the subscribers must resubscribe.
+                    A new instance must be created after calling stop to 
+                    continue eventing, and the subscribers must resubscribe.
                     If pause is the intention, use the 'pause' method.
+
+        Note:   Since this class extends EventThread, review the attributes 
+                and methods for EventThread class.                 
     """
 
     def __init__(self, interval: float, name: str = None, **kwargs):
