@@ -14,7 +14,7 @@ This package provides two classes for working with events:
 The EventThread class creates an event that can be subscribed to and triggered with a payload. The class uses its own thread to broadcast events to subscribers.  The callback function is called when the event is triggered with a payload.
 
 The packet dictionary is passed to the callback.\
-The packet dictionary includes:\
+The packet dictionary includes:
 > All parameters passed in during instantiation of the EventThread.\
 > Minimum items included: ..
     "event" =   The event name\
