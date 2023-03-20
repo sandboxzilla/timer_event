@@ -4,7 +4,7 @@
 timer_event package
 
 Author: Erol Yesin
-Version: 0.8.2
+Version: 0.9.1
 
 This package provides two classes for working with events:
 
