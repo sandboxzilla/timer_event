@@ -4,7 +4,7 @@ This module provides a TimerEvent class that inherits from the Event class to
 create a repeated timer feature.
 
 Author: Erol Yesin
-Version: 0.8.3
+Version: 0.8.4
 
 Classes:
     TimerEvent:     A class that inherits from EventThread to create a repeated
@@ -51,7 +51,7 @@ from threading import Event as Done
 from time import time
 
 __author__ = "Erol Yesin"
-__version__ = "0.8.3"
+__version__ = "0.8.4"
 
 
 class TimerEvent(EventThread):
@@ -82,9 +82,8 @@ class TimerEvent(EventThread):
 
         Args:
             interval (float): The interval between timer events.
-            function (callable): The function to execute on each timer event.
-            args (tuple): Optional arguments for the function.
-            kwargs (dict): Optional keyword arguments for the function.
+            name: Name of the timer.  Default None.
+            kwargs (dict): Optional keywords and arguments for the timer.
 
         Returns:
             self
@@ -98,13 +97,13 @@ class TimerEvent(EventThread):
         self.__done = Done()
         super().__init__(name=name, interval=interval, **self.__kwargs)
         self.__timer = Timer(
-            interval=interval, function=self.__target, **self.__kwargs)
+            interval=interval, function=self.__run, **self.__kwargs)
         self.__timer.start()
 
-    def __target(self):
+    def __run(self):
         """
         The internal timer thread loop.  
-        Used by the Timer to initiate a timed event.
+        Used by the Timer to initiate a timed events.
 
         Returns:
             None
@@ -115,7 +114,7 @@ class TimerEvent(EventThread):
 
     def stop(self):
         """
-        Stops the timer and joins the internal timer thread.
+        Stops the timer and joins the thread.
 
         Returns:
             None

@@ -4,7 +4,7 @@ This module provides a thread-safe Event class for managing and triggering
 events with callback routines.
 
 Author: Erol Yesin
-Version: 0.8.3
+Version: 0.8.4
 
 Classes:
     EventThread:    A class for creating and managing events with 
@@ -49,7 +49,7 @@ Classes:
 """
 
 __author__ = "Erol Yesin"
-__version__ = "0.8.3"
+__version__ = "0.8.4"
 
 from typing import Any, Union
 from queue import Queue
@@ -86,13 +86,6 @@ class EventThread(Thread):
             __queue (Queue): A queue for storing events.
 
         Methods:
-            subscribe(name: str, on_event: callable, cookie: Any = None) -> Event:
-                Subscribes to an event with a callback routine and an optional cookie.
-            unsubscribe(name: str) -> EventThread:
-                Unsubscribes from an event.
-            post(payload, **kwargs) -> EventThread:
-                Posts an event with a payload and optional arguments into queue 
-                for processing.
             __post():
                 Internal runner for processing the queued events.
             __call__(payload, **kwargs) -> Event:
@@ -101,16 +94,23 @@ class EventThread(Thread):
                 Adds a subscription.
             __isub__(handler: (dict, callable, str)) -> Event:
                 Removes the subscription.
+            subscribe(name: str, on_event: callable, cookie: Any = None) -> Event:
+                Subscribes to an event with a callback routine and an optional cookie.
+            unsubscribe(name: str) -> EventThread:
+                Unsubscribes from an event.
+            post(payload, **kwargs) -> EventThread:
+                Posts an event with a payload and optional arguments into queue 
+                for processing.
+            pause() -> EventThread:
+                Pauses broadcasting events
+            unpause() -> EventThread:
+                Unpauses the event to continue broadcasting events
             stop():
                 Stops the event processing thread, clears the subscribers list.
                 Note:   This can not be used as pause.  Once the EventThread 
                         instance is stopped it can not be restarted.
                         A new instance must be created after calling stop to
                         continue eventing, but the subscribers list will be lost
-            pause() -> EventThread:
-                Pauses broadcasting events
-            unpause() -> EventThread:
-                Unpauses the event to continue broadcasting events
     """
 
     def __init__(self, name: str, **kwargs):
@@ -167,6 +167,7 @@ class EventThread(Thread):
 
         Args:
             name (str): The name of the event to unsubscribe from.
+            
         Returns:
             self: The EventThread instance.
         """
@@ -178,6 +179,7 @@ class EventThread(Thread):
     def __post(self) -> None:
         """
         Broadcasts the triggered event
+        
         Returns:
             None
         """
@@ -198,6 +200,7 @@ class EventThread(Thread):
         Args:
             payload: The payload for the event.
             **kwargs: Optional keyword arguments to update the event packet.
+            
         Returns:
             self: The EventThread instance.
         """
@@ -215,6 +218,7 @@ class EventThread(Thread):
         Args:
             payload: The payload for the event.
             **kwargs: Optional keyword arguments to update the event packet.
+            
         Returns:
             self: The EventThread instance.
         """
@@ -232,7 +236,7 @@ class EventThread(Thread):
                     function is given than the string representation of the 
                     function will be used as the key.
 
-                            Returns:
+        Returns:
             self: The EventThread instance.
         """
         with self.__lock:
@@ -259,6 +263,7 @@ class EventThread(Thread):
             the callback routine's details, a callable object, or a string 
             representing the name of the handler.
             Note:   Provide the same argument as when subscribing.
+            
         Returns:
             self: The EventThread instance.
         """
@@ -274,6 +279,7 @@ class EventThread(Thread):
         """
         Stops the event processing thread, clears the subscribers list, 
         and joins the thread.
+        
         Returns:
             None
         """
@@ -286,6 +292,7 @@ class EventThread(Thread):
     def pause(self):
         """
         Pauses the event from broadcasting triggered events
+
         Returns:
             self: The EventThread instance.
         """
@@ -296,6 +303,7 @@ class EventThread(Thread):
     def unpause(self):
         """
         Unpauses the event to continue broadcasting triggered events 
+        
         Returns:
             self: The EventThread instance.
         """
