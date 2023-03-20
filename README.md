@@ -15,7 +15,7 @@ The EventThread class creates an event that can be subscribed to and triggered w
 
 The packet dictionary is passed to the callback.\
 The packet dictionary includes:\
-> All parameters passed in during instantiation of the EventThread.
+> All parameters passed in during instantiation of the EventThread.\
 > Minimum items included: ..
     "event" =   The event name\
     "dest"  =   The subscriber name provided when subscribing\
