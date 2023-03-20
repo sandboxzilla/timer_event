@@ -16,7 +16,7 @@ The EventThread class creates an event that can be subscribed to and triggered w
 The packet dictionary is passed to the callback.\
 The packet dictionary includes:
 > All parameters passed in during instantiation of the EventThread.\
-> Minimum items included: ..
+> Minimum items included: ..\
     "event" =   The event name\
     "dest"  =   The subscriber name provided when subscribing\
     "payload" = The object included in the post\
@@ -30,7 +30,7 @@ The EventThread class has the following methods::
     pause(): Pauses broadcasting events
     unpause(): Unpauses the event to continue broadcasting events
     stop(): Stops the event processing thread, clears the subscribers list.
-            Note:   This can not be used as pause.  Once the EventThread instance is stopped it can not be restarted.\
+            Note:   This can not be used as pause.  Once the EventThread instance is stopped it can not be restarted.
                     A new instance must be created after calling stop to continue eventing, but the subscribers list will be lost.
 
  ## **TimerEvent:**
