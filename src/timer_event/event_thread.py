@@ -4,7 +4,7 @@ This module provides a thread-safe Event class for managing and triggering
 events with callback routines.
 
 Author: Erol Yesin
-Version: 0.8.4
+Version: 0.9.1
 
 Classes:
     EventThread:    A class for creating and managing events with 
@@ -49,7 +49,7 @@ Classes:
 """
 
 __author__ = "Erol Yesin"
-__version__ = "0.8.4"
+__version__ = "0.9.1"
 
 from typing import Any, Union
 from queue import Queue

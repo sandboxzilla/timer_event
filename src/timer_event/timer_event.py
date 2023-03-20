@@ -4,7 +4,7 @@ This module provides a TimerEvent class that inherits from the Event class to
 create a repeated timer feature.
 
 Author: Erol Yesin
-Version: 0.8.4
+Version: 0.9.1
 
 Classes:
     TimerEvent:     A class that inherits from EventThread to create a repeated
@@ -51,7 +51,7 @@ from threading import Event as Done
 from time import time
 
 __author__ = "Erol Yesin"
-__version__ = "0.8.4"
+__version__ = "0.9.1"
 
 
 class TimerEvent(EventThread):
