@@ -1,82 +1,131 @@
-# Timer Event Low-Level Design
+# Timer Event Low-Level Design (2025-10-11)
 
-> **Document scope:** Describes the current implementation prior to the refactor outlined in `design_architecture_review.md`. Behavior noted here (e.g., lossy pause, lack of exception handling) is known to be problematic and scheduled for correction.
+## Module Inventory
+```mermaid
+flowchart TD
+    subgraph src/timer_event
+        A[event_thread.py]
+        B[timer_event.py]
+        C[__init__.py]
+    end
+    subgraph tests
+        D[test_event_thread.py]
+        E[test_timer_event.py]
+    end
+    A --> B:::import
+    C --> A
+    C --> B
+    classDef import stroke:#0366d6,stroke-width:2px;
+```
 
-## Module: `src/timer_event/event_thread.py`
-### Class `EventThread(Thread)`
-- **Constructor**
-  - Parameters: `name: str`, `**kwargs` (default packet fields).
-  - Initializes a `Lock`, populates `__packet` defaults (`event`, `dest`, `payload`, `cookie`), creates empty subscriber dict, queue (`Queue()`), flags (`__continue_thread=True`, `__pause_broadcasting=False`), and starts the thread by calling `Thread.__init__` with `target=self.__post` followed by `self.start()`.
-- **Private State**
-  - `__packet: dict` – template dictionary copied per post.
-  - `__subscribers: Dict[str, Dict[str, Any]]` – maps subscriber name to handler info (`on_event`, `cookie`).
-  - `__queue: Queue` – unbounded FIFO of packet dictionaries.
-  - `__lock: Lock` – guards subscriber and template mutation.
-  - Flags: `__continue_thread`, `__pause_broadcasting`.
-- **Public Methods**
-  - `subscribe(name, on_event, cookie=None) -> EventThread`: Inserts handler dict under lock.
-  - `unsubscribe(name) -> EventThread`: Removes entry if present.
-  - `post(payload, **kwargs) -> EventThread`: Copies `__packet`, merges overrides, sets `payload`, enqueues via `put_nowait`.
-  - `pause()/unpause() -> EventThread`: Flip pause flag (`unpause` lacks locking).
-  - `stop() -> None`: Sets continue flag false, enqueues sentinel (`payload=None`), joins thread, clears subscribers.
-  - Operator overloads `__call__`, `__iadd__`, `__isub__` to support shorthand posting and subscription.
-- **Dispatcher Loop (`__post`)**
-  - Runs until `__continue_thread` is false.
-  - Retrieves packet with `queue.get()`.
-  - If `payload is not None` and not paused: iterates `__subscribers.items()`, mutates `packet["dest"]`/`["cookie"]`, invokes callback.
-  - If paused, discards packet silently (no requeue).
+## Class Structure
+```mermaid
+classDiagram
+    direction TB
+    class EventThread {
+        -__packet: dict
+        -__subscribers: Dict[str, Dict[str, Any]]
+        -__continue_thread: bool
+        -__pause_broadcasting: bool
+        -__lock: Lock
+        -__queue: Queue
+        +__init__(name: str, **kwargs)
+        +subscribe(name: str, on_event: Callable, cookie: Any = None)
+        +unsubscribe(name: str)
+        +post(payload, **kwargs)
+        +__call__(payload, **kwargs)
+        +__iadd__(handler)
+        +__isub__(handler)
+        +pause()
+        +unpause()
+        +stop()
+        -__post()
+    }
+    class TimerEvent {
+        -__kwargs: dict
+        -__interval: float
+        -__done: threading.Event
+        -__timer: threading.Timer
+        +__init__(interval: float, name: str = None, **kwargs)
+        -__run()
+        +stop()
+    }
+    EventThread <|-- TimerEvent
+```
 
-## Module: `src/timer_event/timer_event.py`
-### Class `TimerEvent(EventThread)`
-- **Constructor**
-  - Parameters: `interval: float`, `name: Optional[str] = None`, `**kwargs`.
-  - Validates interval ≥ 0, stores `__kwargs`, derives default name (`"{interval}sRepeatingTimer"`), initializes `__done = threading.Event()`.
-  - Calls `super().__init__(name=name, interval=interval, **__kwargs)` to seed packet template with interval.
-  - Creates `__timer = threading.Timer(interval=interval, function=self.__run, **__kwargs)` and starts it immediately.
-- **Private State**
-  - `__interval: float` – polling period.
-  - `__kwargs: dict` – reused for both packet defaults and Timer kwargs.
-  - `__done: threading.Event` – signals shutdown.
-  - `__timer: threading.Timer` – periodic driver.
-- **Private Methods**
-  - `__run()`: While not `__done.is_set()`, calls `self.post(time())`, then waits on `__done` for interval seconds.
-- **Public Overrides**
-  - `stop()`: Sets `__done`, calls `super().stop()` to halt dispatcher, joins timer thread.
+## Internal Dispatch Workflow
+```mermaid
+sequenceDiagram
+    participant Poster as EventThread.post
+    participant Queue as queue.Queue
+    participant Dispatcher as EventThread.__post
+    participant Registry as __subscribers dict
+    participant Callback as Subscriber Handler
 
-## Module: `src/timer_event/__init__.py`
-- Re-exports `EventThread` and `TimerEvent`.
-- Contains package metadata/docstring.
+    Poster->>Poster: copy template (__packet)
+    Poster->>Poster: update payload & overrides
+    Poster->>Queue: put_nowait(packet)
+    loop until __continue_thread is False
+        Dispatcher->>Queue: get()
+        alt payload is None
+            Dispatcher->>Dispatcher: sentinel -> break loop
+        else paused flag true
+            Dispatcher->>Dispatcher: discard packet
+        else
+            loop for name, handler in Registry
+                Dispatcher->>Dispatcher: packet["dest"]=name
+                Dispatcher->>Dispatcher: packet["cookie"]=handler["cookie"]
+                Dispatcher->>Callback: handler["on_event"](packet)
+            end
+        end
+    end
+    Dispatcher->>Registry: clear() on stop()
+```
 
-## Data Structures & Packet Format
-- Packet dictionary keys:
-  - `event`: event name (string from constructor).
-  - `dest`: subscriber name currently being invoked (mutated per callback).
-  - `payload`: opaque client-supplied object or timer timestamp.
-  - `cookie`: arbitrary object attached during subscription.
-  - Additional custom keys inserted via constructor kwargs or `post` overrides.
+## EventThread Lifecycle States
+```mermaid
+stateDiagram-v2
+    [*] --> Starting
+    Starting --> Running : Thread.start()
+    Running --> Paused : pause()
+    Paused --> Running : unpause()
+    Running --> Stopping : stop()
+    Paused --> Stopping : stop()
+    Stopping --> Stopped : join() + clear subscribers
+    Stopped --> [*]
+```
 
-## Error & State Handling
-- No explicit error propagation; callback exceptions bubble up and terminate dispatcher.
-- Queue operations are non-blocking (`put_nowait`), which raises `queue.Full` if a bounded queue is introduced later.
-- `stop()` can be called multiple times; only first invocation performs shutdown logic.
-- There is no explicit restart; new instance required after `stop()`.
+## TimerEvent Scheduling Loop
+```mermaid
+sequenceDiagram
+    participant Init as TimerEvent.__init__
+    participant Base as EventThread.__init__
+    participant Timer as threading.Timer
+    participant Done as threading.Event
+    participant Dispatcher as EventThread.__post
 
-## Extension Points
-- Override `EventThread.__post` to change broadcasting semantics.
-- Subclass `TimerEvent` to alter payload contents (e.g., computed metrics) or scheduling strategy by overriding `__run`.
-- Wrap `post` to transform payloads (serialization, validation) before enqueueing.
+    Init->>Base: super().__init__(interval=..., **kwargs)
+    Init->>Done: instantiate (unset)
+    Init->>Timer: create(function=__run, interval, **kwargs)
+    Init->>Timer: start()
+    loop while not Done.is_set()
+        Timer->>Init: __run()
+        Init->>Dispatcher: post(time())
+    end
+    Init->>Done: set() on stop()
+    Init->>Base: super().stop()
+    Init->>Timer: join()
+```
 
-## Pending Refactor Checklist
-Referencing `design_architecture_review.md`, planned low-level changes include:
-- Guard subscriber iteration with copies and per-callback packet cloning.
-- Introduce structured error handling around callbacks.
-- Rework pause/stop to buffer or drain events rather than dropping them.
-- Replace `threading.Timer` usage with a controllable loop that supports lazy start and dynamic intervals.
-This checklist should be updated as each item is implemented so the document remains a faithful representation of the code.
+## Data Structures & Concurrency Notes
+- **Packet Template (`__packet`)** – Mutable dictionary seeded during construction (`event`, optional metadata). Each `post` copies the template, merges overrides, and writes the current `payload`.
+- **Subscriber Registry (`__subscribers`)** – Maps subscriber name to a dictionary containing `on_event` and `cookie`. Access is serialized with `__lock` for modifications but iteration occurs without taking a snapshot.
+- **Queue (`__queue`)** – Unbounded `queue.Queue` used to hand off work between producers and the dispatcher thread.
+- **Flags** – `__continue_thread` governs the dispatcher loop; `__pause_broadcasting` toggled by `pause()` / `unpause()` without locking in the latter.
+- **Timer Coordination** – `TimerEvent` retains arbitrary `**kwargs` both for packet defaults and for `threading.Timer`, so callers must avoid keys unsupported by the timer constructor.
 
-## Planned Changes
-- Add explicit locking around `unpause()` and other state mutations to ensure consistent visibility across threads.
-- Introduce bounded queue support (`Queue(maxsize=N)`) with configurable overflow behavior.
-- Return subscription tokens/objects from `subscribe()` to simplify safe deregistration and avoid reliance on string names.
-- Implement structured packet objects or frozen snapshots to prevent handler-side mutations from leaking between subscribers.
-- Create a dedicated scheduler loop inside `TimerEvent` with interval adjustment and pause-aware waiting strategy.
+## Known Limitations (Informing Future Work)
+- Dispatcher iterates over `__subscribers` while holding no lock; concurrent modification can raise `RuntimeError`.
+- Paused events are discarded permanently; there is no buffering or backpressure mechanism.
+- Callback exceptions propagate and terminate the dispatcher thread.
+- `TimerEvent` begins emitting immediately upon construction and cannot restart once stopped.

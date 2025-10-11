@@ -1,65 +1,85 @@
-# Timer Event High-Level Design
+# Timer Event High-Level Design (2025-10-11)
 
-## Goals & Non-Goals
-- **Goals**
-  - Provide a simple API to publish events to multiple subscribers safely across threads.
-  - Offer a reusable timer facility that emits events at fixed intervals without custom scheduling code.
-  - Remain dependency-light and compatible with CPython ≥ 3.6.
-- **Non-Goals**
-  - Deliver distributed messaging, persistence, or guarantees beyond in-process delivery.
-  - Handle complex orchestration (retry policies, durable queues, metrics) out of the box.
+## System Context
+The `timer_event` package runs entirely within a single Python process. Client threads create `EventThread` or `TimerEvent` instances, post payloads, and receive callbacks on library-managed threads. The implementation depends on the Python standard library (`threading`, `queue`, `time`) and has no external service requirements.
 
-> **Document scope:** This file reflects the current implementation (v0.9.1). Known gaps and remediation priorities are tracked in `design_architecture_review.md`; see “Future Work” below for a consolidation of those actions.
+```mermaid
+flowchart LR
+    subgraph Client Threads
+        A[Publisher Thread]
+        B[Consumer Modules]
+    end
+    subgraph timer_event Library
+        C(EventThread Dispatcher Thread)
+        D[[queue.Queue]]
+        E[[Subscriber Callback Registry]]
+    end
+    subgraph Standard Library
+        F(threading.Timer)
+        G(threading.Event<br/>(Timer Done))
+    end
 
-## Key Use Cases
-1. **Ad-hoc event hub**: A GUI or CLI tool broadcasts state changes to listeners while isolating callback execution from UI threads.
-2. **Periodic metrics collection**: A background timer samples system state every N seconds and forwards results to subscribers that aggregate or log data.
-3. **Plugin hooks**: Plugins register callbacks on startup and receive structured payloads when core code posts events.
-
-## Major Components
-- **EventThread**
-  - Owns a bounded-unbounded queue (current implementation uses an unbounded `Queue`).
-  - Spawns a dispatcher thread on construction.
-  - Maintains subscriber dictionary keyed by logical names.
-  - Provides lifecycle controls (`post`, `pause`, `unpause`, `stop`).
-- **TimerEvent**
-  - Extends `EventThread`.
-  - Starts a `threading.Timer` loop that posts the current epoch time (float) to the queue every configured interval.
-  - Uses a `threading.Event` (`__done`) to coordinate shutdown.
-
-## High-Level Flow
-```
-Client registers callback -> EventThread stores handler
-Client posts payload / TimerEvent fires -> payload enqueued
-Dispatcher thread dequeues payload -> iterates subscribers -> invokes callback(packet)
+    A -->|post(payload)| D
+    D --> C
+    C -->|invoke(packet)| B
+    B -.->|subscribe() / unsubscribe()| E
+    E -.-> C
+    F -->|time tick| C
+    G -.-> F
+    B -.->|pause()/stop()| C
 ```
 
-## Failure Handling
-- Dispatcher catches no exceptions today; a thrown exception exits the dispatcher thread.
-- Pause merely sets a flag; packets consumed while paused are dropped.
-- `stop()` sends sentinel payload (`None`) to exit the dispatcher.
-Improvements: wrap callbacks in try/except, support retry/skip strategies, and retain queue items while paused.
+## Core Responsibilities
+- **EventThread** – Owns the dispatcher thread, queue, and subscriber registry. Accepts posts from any thread and forwards packets to each subscriber sequentially.
+- **TimerEvent** – Subclass of `EventThread` that schedules periodic posts using `threading.Timer` and coordinates shutdown through `threading.Event`.
+- **Subscribers** – Client-provided callables invoked with the packet dictionary assembled by `EventThread`.
 
-## Extensibility Points
-- Additional event metadata: allow custom packet factory or dataclass payload.
-- Alternate timer backends: implement strategy pattern for scheduling (cron, exponential backoff).
-- Diagnostics hooks: pass events through middleware for logging/metrics before callbacks run.
+## Event Dispatch Sequence
+```mermaid
+sequenceDiagram
+    participant Publisher as Publisher Thread
+    participant EventThread as EventThread.post()
+    participant Queue as queue.Queue
+    participant Dispatcher as Dispatcher Thread (__post)
+    participant Subscriber as Subscriber Callback
 
-## Deployment & Integration Guidance
-- Use in-process contexts (microservices worker threads, CLI tooling).
-- For multi-process or networked signalling, pair with external brokers (e.g., Redis pub/sub) or use `multiprocessing.Queue`.
-- Integrate with frameworks by wrapping subscription lifecycle in app startup/shutdown hooks to guarantee `stop()` is called.
+    Publisher->>EventThread: post(payload, **overrides)
+    EventThread->>EventThread: merge template + overrides
+    EventThread->>Queue: put_nowait(packet)
+    Dispatcher->>Queue: get()
+    alt payload is not None AND not paused
+        loop for each subscriber
+            Dispatcher->>Subscriber: on_event(packet with dest/cookie)
+        end
+    else paused or null payload
+        Dispatcher->>Dispatcher: discard packet
+    end
+```
 
-## Future Work
-The current architecture has critical shortcomings (unsynchronized iteration, lossy pause semantics, fragile timer lifecycle). The actionable plan lives in `design_architecture_review.md`; headline items include:
-1. Harden dispatcher thread-safety (snapshot subscribers, copy packets, isolate callback failures).
-2. Redesign pause/queue handling to support buffering and backpressure.
-3. Detach timer scheduling from construction and tolerate richer packet metadata.
-4. Expand diagnostics and context manager ergonomics.
-These improvements should be reflected here once implemented; until then this document should be read alongside the review to avoid assuming guarantees the code cannot yet provide.
+## Timer-Driven Flow
+```mermaid
+sequenceDiagram
+    participant Caller as Caller
+    participant TimerEvent as TimerEvent.__init__
+    participant Timer as threading.Timer
+    participant Done as threading.Event
+    participant Dispatcher as EventThread Dispatcher
 
-## Planned Changes
-- Provide subscription handles (or enforce unique names with clear errors) and expose lifecycle inspection helpers (`is_paused`, `subscriber_count`, queue depth).
-- Introduce policy hooks for callback failure handling (continue, retry, halt) and document them in the API.
-- Allow configurable queue sizes and overflow strategies to better serve high-throughput use cases.
-- Integrate observability features (logging, metrics hooks) and improved developer ergonomics (context managers, helper factories).
+    Caller->>TimerEvent: TimerEvent(interval, name?, **kwargs)
+    TimerEvent->>Dispatcher: super().__init__(interval=..., **kwargs)
+    TimerEvent->>Timer: start(function=__run, interval)
+    loop every interval
+        Timer->>TimerEvent: __run()
+        TimerEvent->>Dispatcher: post(time())
+    end
+    Caller->>TimerEvent: stop()
+    TimerEvent->>Done: set()
+    TimerEvent->>Dispatcher: super().stop()
+    TimerEvent->>Timer: join()
+```
+
+## Deployment & Integration Considerations
+- All callbacks execute on the dispatcher thread. Long-running or blocking work should be delegated to worker pools to prevent stalling other subscribers.
+- Pausing currently drops queued packets; use `stop()` when lossless shutdown is required.
+- Each `TimerEvent` instance creates both a dispatcher thread (inherited) and a dedicated `threading.Timer` thread; budget thread resources accordingly.
+- The package is thread-safe at the API boundary (queue protects posts), but subscriber mutation during dispatch shares the packet object and must be handled carefully by consumers.
