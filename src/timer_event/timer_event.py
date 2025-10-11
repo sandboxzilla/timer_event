@@ -1,6 +1,6 @@
-#!/bin/python3
+#!/usr/bin/env python3
 """
-This module provides a TimerEvent class that inherits from the Event class to 
+This module provides a TimerEvent class that inherits from the EventThread class to 
 create a repeated timer feature.
 
 Author: Erol Yesin
@@ -13,7 +13,7 @@ Classes:
         >>> from time import sleep
         ...
         >>> def print_time(packet):
-        ...... print(f"Current time: {packet['payload']}")
+        ...... print(f"Current time: {packet[\'payload\']}")
         ...
         >>> te = TimerEvent(interval=0.5)
         >>> te.subscribe("time_printer", print_time)
@@ -44,8 +44,7 @@ Classes:
     FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
     DEALINGS IN THE SOFTWARE.
 
-"""
-from .event_thread import EventThread
+"""from .event_thread import EventThread
 from threading import Timer
 from threading import Event as Done
 from time import time

@@ -1,82 +1,51 @@
-# Timer Event Package
+# Timer Event
 
-This package provides two classes for working with events:
+Lightweight, thread-safe helpers for broadcasting events and emitting recurring callbacks in Python.
 
-*1. EventThread:* A class for creating and managing events with callback routines.\
-    This class can be used independently of TimerEvent for handling general event-driven scenarios without any time-based requirements.
+## Features
+- `EventThread` runs a dispatcher thread so producers can `post()` payloads without blocking.
+- `TimerEvent` extends `EventThread` with a fixed-interval timer that posts the current timestamp as soon as the instance is constructed.
+- Subscriber cookies and per-post overrides let you enrich packets with contextual metadata.
 
-*2.  TimerEvent:* A class that extends EventThread to create timer-based events.\
-    This class is specifically designed for scenarios where events are triggered after a certain period of time or at specific intervals.\
-    **Note:**   Since this class extends the EventThread class it uses most all methods defined and documented in EvenThread class.
+## Install
+```bash
+pip install -e .
+```
 
-## **EventThread:**
+## Quick Start
+```python
+from timer_event import EventThread, TimerEvent
 
-The EventThread class creates an event that can be subscribed to and triggered with a payload. The class uses its own thread to broadcast events to subscribers.  The callback function is called when the event is triggered with a payload.
+bus = EventThread("alerts", severity="info")
 
-The packet dictionary is passed to the callback.\
-The packet dictionary includes:
-> All parameters passed in during instantiation of the EventThread.\
-> Minimum items included: ..\
-    "event" =   The event name\
-    "dest"  =   The subscriber name provided when subscribing\
-    "payload" = The object included in the post\
-    "cookie" =  The cookie if included when subscribing, otherwise None
+def handle(packet):
+    print(packet["event"], packet["payload"], packet["cookie"])
 
-The EventThread class has the following methods::
+bus.subscribe("printer", handle, cookie={"source": "demo"})
+bus.post({"msg": "something happened"})
 
-    subscribe(name: str, on_event: callable): Subscribes to the event with a callback function.
-    unsubscribe(name: str): Unsubscribes from the event.
-    post(payload, **kwargs): Posts an event with a payload to the subscribers.
-    pause(): Pauses broadcasting events
-    unpause(): Unpauses the event to continue broadcasting events
-    stop(): Stops the event processing thread, clears the subscribers list.
-            Note:   This can not be used as pause.  Once the EventThread instance is stopped it can not be restarted.
-                    A new instance must be created after calling stop to continue eventing, but the subscribers list will be lost.
+timer = TimerEvent(interval=2.0, name="heartbeat")
+timer.subscribe("tick", handle)
+# TimerEvent starts its internal threads immediately; no explicit start() call.
 
- ## **TimerEvent:**
+# ... application logic ...
 
-The TimerEvent class creates a timed event that triggers at a specified interval. The class uses a Timer object to initiate the timed event. The TimerEvent class can be subscribed to using the subscribe method, which takes a name and a callback function as arguments. The callback function is executed when the timed event is triggered.
+timer.stop()  # Always stop timers to release threads.
+bus.stop()    # EventThread instances cannot be restarted once stopped.
+```
 
-The  TimerEvent class has the following methods::
+## Developer Workflow
+- `python -m unittest discover -s tests -v` — run the regression suite.
+- `python -m build` — create source and wheel distributions for release.
 
-    subscribe(name: str, on_event: callable): Subscribes to the timed event with a callback function.
-    unsubscribe(name: str): Unsubscribes from the timed event.
-    stop(): Stops the timed event.
+## Documentation
+Detailed docs live in `docs/`. Start with:
+- `architecture_overview.md` — system context and component map.
+- `high_level_design.md` — goals, use cases, current capabilities.
+- `low_level_design.md` — implementation walkthrough of the current release.
+- `design_architecture_review.md` — prioritized remediation plan for known flaws (race conditions, pause semantics, error handling).
+- `timer_event_manual.md` — man-page style usage reference.
+- `AGENTS.md` — contributor guidelines.
 
- ## Example Usage::
-<code>
-
-    from timer_event import TimerEvent, EventThread
-    import time
-
-     # Create a TimerEvent that triggers every 5 seconds
-    te = TimerEvent(interval=5.0)
-
-    # Subscribe to the TimerEvent
-    def te_on_event(packet):
-        print("TimerEvent triggered")
-
-    te.subscribe(name="test_subscriber", on_event=te_on_event)
-
-    # Start the TimerEvent
-    te.start()
-
-    # Create an Event
-    event = EventThread("test_event")
-
-    # Subscribe to the Event
-    def ev_on_event(payload):
-        print(f"Event triggered with payload: {payload}")
-
-    event.subscribe(name="test_subscriber", on_event=ev_on_event)
-
-    # Post an event with a payload
-    event.post("test_payload")
-
-    # Sleep to allow for timer events
-    time.sleep(10)
-
-    # Stop the TimerEvent and Event
-    te.stop()
-    event.stop()
-</code>
+## Contributing
+Please read `AGENTS.md` for coding standards, testing expectations, and pull request tips.

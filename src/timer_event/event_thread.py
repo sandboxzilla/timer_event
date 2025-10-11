@@ -1,4 +1,4 @@
-#!/bin/python3
+#!/usr/bin/env python3
 """
 This module provides a thread-safe Event class for managing and triggering
 events with callback routines.
@@ -15,7 +15,7 @@ Classes:
         >>> def my_callback(packet):
         ... ... print(packet["payload"])
         ...
-        >>> ev = Event("example")
+        >>> ev = EventThread("example")
         >>> ev.subscribe("example_subscriber", my_callback)
         >>> ev.post("Hello, world!")
         >>> ### The sleep prevents race condition where the callback might 
@@ -80,7 +80,7 @@ class EventThread(Thread):
                                     subscribers' name and callback routines.
             __continue_thread (bool):   A flag indicating whether the thread 
                                         should continue running.
-            __pause_broadcasting (bbol):    A flag indicating that event should
+            __pause_broadcasting (bool):    A flag indicating that event should
                                             pause broadcasting
             __lock (Lock): A lock for thread safety.
             __queue (Queue): A queue for storing events.
@@ -88,13 +88,13 @@ class EventThread(Thread):
         Methods:
             __post():
                 Internal runner for processing the queued events.
-            __call__(payload, **kwargs) -> Event:
+            __call__(payload, **kwargs) -> EventThread:
                 Calls an event with a payload and optional arguments.
-            __iadd__(handler: (dict, callable)) -> Event:
+            __iadd__(handler: (dict, callable)) -> EventThread:
                 Adds a subscription.
-            __isub__(handler: (dict, callable, str)) -> Event:
+            __isub__(handler: (dict, callable, str)) -> EventThread:
                 Removes the subscription.
-            subscribe(name: str, on_event: callable, cookie: Any = None) -> Event:
+            subscribe(name: str, on_event: callable, cookie: Any = None) -> EventThread:
                 Subscribes to an event with a callback routine and an optional cookie.
             unsubscribe(name: str) -> EventThread:
                 Unsubscribes from an event.
@@ -143,7 +143,7 @@ class EventThread(Thread):
         super().__init__(name=self.__packet["event"] + "T", target=self.__post)
         self.start()
 
-    def subscribe(self, name: str, on_event: callable, cookie: Any = None) -> 'Event':
+    def subscribe(self, name: str, on_event: callable, cookie: Any = None) -> 'EventThread':
         """
         Subscribe to an event with a callback routine and an optional cookie.
 
@@ -161,7 +161,7 @@ class EventThread(Thread):
             self.__subscribers[name] = {"on_event": on_event, "cookie": cookie}
         return self
 
-    def unsubscribe(self, name: str) -> 'Event':
+    def unsubscribe(self, name: str) -> 'EventThread':
         """
         Unsubscribes from an event.
 

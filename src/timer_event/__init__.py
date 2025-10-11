@@ -1,4 +1,4 @@
-#!/bin/python3
+#!/usr/bin/env python3
 
 """
 timer_event package
@@ -18,7 +18,7 @@ This package provides two classes for working with events:
     This class is specifically designed for scenarios where events are 
     triggered after a certain period of time or at specific intervals.
     Note:   Since this class extends the EventThread class it uses most 
-            all methods defined and documented in EvenThread class.
+            all methods defined and documented in EventThread class.
 
 For detailed documentation and example usage on each class, refer to their
 respective module files.
