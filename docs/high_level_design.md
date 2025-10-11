@@ -57,3 +57,9 @@ The current architecture has critical shortcomings (unsynchronized iteration, lo
 3. Detach timer scheduling from construction and tolerate richer packet metadata.
 4. Expand diagnostics and context manager ergonomics.
 These improvements should be reflected here once implemented; until then this document should be read alongside the review to avoid assuming guarantees the code cannot yet provide.
+
+## Planned Changes
+- Provide subscription handles (or enforce unique names with clear errors) and expose lifecycle inspection helpers (`is_paused`, `subscriber_count`, queue depth).
+- Introduce policy hooks for callback failure handling (continue, retry, halt) and document them in the API.
+- Allow configurable queue sizes and overflow strategies to better serve high-throughput use cases.
+- Integrate observability features (logging, metrics hooks) and improved developer ergonomics (context managers, helper factories).

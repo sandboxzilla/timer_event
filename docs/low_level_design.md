@@ -73,3 +73,10 @@ Referencing `design_architecture_review.md`, planned low-level changes include:
 - Rework pause/stop to buffer or drain events rather than dropping them.
 - Replace `threading.Timer` usage with a controllable loop that supports lazy start and dynamic intervals.
 This checklist should be updated as each item is implemented so the document remains a faithful representation of the code.
+
+## Planned Changes
+- Add explicit locking around `unpause()` and other state mutations to ensure consistent visibility across threads.
+- Introduce bounded queue support (`Queue(maxsize=N)`) with configurable overflow behavior.
+- Return subscription tokens/objects from `subscribe()` to simplify safe deregistration and avoid reliance on string names.
+- Implement structured packet objects or frozen snapshots to prevent handler-side mutations from leaking between subscribers.
+- Create a dedicated scheduler loop inside `TimerEvent` with interval adjustment and pause-aware waiting strategy.

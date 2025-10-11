@@ -39,3 +39,11 @@ Packets are simple dictionaries combining defaults provided at construction with
 - Introduce structured event objects instead of raw dicts to improve type safety.
 - Add lifecycle introspection (`is_running`, queue size) for observability.
 - Support alternative scheduling strategies (crontab expressions, jitter control) via pluggable timer backends.
+
+## Planned Changes
+Pulled from `design_architecture_review.md` and `refactoring_plan.md`:
+- Harden dispatcher thread-safety by snapshotting subscribers, copying packets per handler, and insulating callback failures.
+- Redesign pause and queue management to support buffering/backpressure and graceful drains on `stop()`.
+- Replace the `threading.Timer` dependency with an internal scheduler loop that allows lazy start, dynamic intervals, and synchronized pause/resume.
+- Expose richer lifecycle and observability hooks (subscriber counts, queue depth, metrics/log callbacks).
+- Standardize packaging metadata and CI automation to keep the architecture verifiable over time.
