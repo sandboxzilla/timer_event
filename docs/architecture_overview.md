@@ -11,8 +11,8 @@ The `timer_event` package provides a lightweight event-bus abstraction backed by
 ## Component Breakdown
 | Component | Responsibility | Key Collaborators |
 |-----------|----------------|-------------------|
-| `EventThread` | Manages subscriber registry, enqueues payloads, broadcasts packets on a background thread. | `queue.Queue`, `threading.Thread`, client callbacks |
-| `TimerEvent` | Builds on `EventThread` to post timestamps at a configured interval. | `threading.Timer`, `threading.Event` (`Done`) |
+| `EventThread` | Manages subscriber registry, enqueues payloads, broadcasts packets on a background thread; returns subscription handles for lifecycle management. | `queue.Queue`, `threading.Thread`, client callbacks |
+| `TimerEvent` | Builds on `EventThread` to post timestamps via an internal ticker thread with changeable intervals. | `threading.Event`, `threading.Thread`, `time.time` |
 | Tests (`tests/`) | Validate subscription, timer cadence, pause/unpause, stop behavior. | `unittest`, real-time sleeps |
 | Packaging (`pyproject.toml`, `setup.cfg`, `setup.py`) | Distribute library to PyPI-compatible tooling. | `setuptools`, PEP 517 |
 
@@ -26,24 +26,24 @@ The `timer_event` package provides a lightweight event-bus abstraction backed by
 ```
 Client code -> EventThread.post(payload) -> Queue -> Dispatcher thread
 Dispatcher thread -> Subscriber registry -> Callback(packet dict)
-TimerEvent -> threading.Timer -> EventThread.post(current_time)
+TimerEvent -> ticker thread -> EventThread.post(current_time)
 ```
 Packets are simple dictionaries combining defaults provided at construction with per-post overrides and runtime metadata (`event`, `dest`, `payload`, `cookie`).
 
 ## Operational Considerations
-- `pause()` and `unpause()` flip a flag checked by the dispatcher; during pause, events are discarded. Consumers that need lossless behavior must drain queue before pausing.
-- `stop()` signals the dispatcher to exit, posts a sentinel (`payload=None`), waits for thread termination, and clears subscribers. A stopped instance cannot be restarted.
-- Threads start automatically when objects are constructed. If clients must delay dispatch, they should modify the classes or guard subscriber registration carefully.
+- `pause()` and `unpause()` control a synchronisation gate; while paused, the dispatcher thread blocks and buffered events accumulate according to the configured `overflow_policy` (`block`, `drop_newest`, `drop_oldest`, `error`).
+- `stop(wait=True)` signals the dispatcher with an internal sentinel, drains the queue, and joins the worker thread; pass `wait=False` for non-blocking shutdown. A stopped instance cannot be restarted.
+- `error_policy` governs subscriber failures: continue (default), stop the dispatcher, or re-raise to callers. Optional hooks `on_error` and `on_dispatch` expose structured diagnostics for failures and successes respectively.
+- Inspect runtime state via `subscriber_count`, `queue_size`, `max_queue_size`, `is_running`, and `is_paused`.
+- Threads start automatically when objects are constructed; context managers (`with EventThread(...)`) guarantee cleanup even on exceptional exits.
 
 ## Future Evolution Hooks
 - Introduce structured event objects instead of raw dicts to improve type safety.
-- Add lifecycle introspection (`is_running`, queue size) for observability.
-- Support alternative scheduling strategies (crontab expressions, jitter control) via pluggable timer backends.
+- Add optional scheduling strategies (cron/jitter) via pluggable timer backends.
+- Build first-class observability adapters (metrics/log sinks) on top of the `on_dispatch`/`on_error` hooks.
 
 ## Planned Changes
-Pulled from `design_architecture_review.md` and `refactoring_plan.md`:
-- Harden dispatcher thread-safety by snapshotting subscribers, copying packets per handler, and insulating callback failures.
-- Redesign pause and queue management to support buffering/backpressure and graceful drains on `stop()`.
-- Replace the `threading.Timer` dependency with an internal scheduler loop that allows lazy start, dynamic intervals, and synchronized pause/resume.
-- Expose richer lifecycle and observability hooks (subscriber counts, queue depth, metrics/log callbacks).
-- Standardize packaging metadata and CI automation to keep the architecture verifiable over time.
+Remaining actions (aligned with the P2 roadmap):
+- Add automated packaging/tooling checks (lint, format, CI) to preserve the new guarantees.
+- Expand documentation with context-manager recipes, diagnostics guidance, and advanced scheduling examples.
+- Formalize observability integrations (metrics/log exports) using the existing hook surface.

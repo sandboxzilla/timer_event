@@ -1,7 +1,9 @@
 # Timer Event Change Proposal
 
+> **Status (2025-10-12):** Stage 1 (P0) and Stage 2 (P1) items have been completed and shipped in v0.10.0. The proposal below is retained for reference; remaining active work lives in the Stage 3 (P2) section.
+
 ## Executive Summary
-`timer_event` v0.9.1 ships with critical threading and lifecycle defects that compromise reliability and developer ergonomics. This proposal delivers a staged programme of work that:
+`timer_event` v0.9.1 shipped with critical threading and lifecycle defects that compromised reliability and developer ergonomics. This proposal delivered a staged programme of work that:
 - Hardens core concurrency primitives (snapshot subscribers, clone packets, isolate callback failures).
 - Introduces robust flow control (pause buffering, queue bounds, graceful stop).
 - Replaces the tight coupling between construction and scheduling with a configurable timer engine.
@@ -39,16 +41,15 @@ By executing the plan below in three stages, we can mitigate risk, maintain rele
 
 ### Deliverables
 1. **Timer Engine**
-   - Replace `threading.Timer` with a managed loop that supports lazy `start()`, `stop()`, `change_interval()`, and pause-aware waiting.
+   - Replace `threading.Timer` with a managed loop that supports lazy `start_timer()`, `stop(wait=...)`, `change_interval()`, and pause-aware waiting.
    - Allow jitter or cron-like strategies via pluggable scheduler interface (optional stretch goal).
 2. **Subscription Handles**
-   - Return handle objects from `subscribe()` with `.unsubscribe()` and `.pause()` helpers; enforce unique names or eliminate name requirement.
+   - Return handle objects from `subscribe()` with `.unsubscribe()` helpers and enforce unique subscriber names.
 3. **Lifecycle & Metrics**
-   - Surface state inspection APIs (`is_running`, `is_paused`, `subscriber_count`, queue length).
-   - Add logging/metrics hooks for callback duration and failures.
+   - Surface state inspection APIs (`is_running`, `is_paused`, `subscriber_count`, `queue_size`, `max_queue_size`).
+   - Add logging/metrics hooks for callback success (`on_dispatch`) and failures (`on_error`).
 4. **Developer Experience**
-   - Introduce context managers (`with TimerEvent(...) as timer:`) for safe setup/teardown.
-   - Provide helper factories for common payload patterns.
+   - Introduce context managers (`with EventThread(...)`) for safe setup/teardown.
 
 ### Success Criteria
 - Timer can be instantiated without immediate emission; starting/stopping is explicit and deterministic.

@@ -1,7 +1,9 @@
 # Timer Event Design & Architecture Review
 
+> **Status (2025-10-12):** All high-priority findings documented here were addressed in the Stage P0/P1 refactors (see `src/timer_event/event_thread.py` and `src/timer_event/timer_event.py`). The review remains as a historical record of the pre-0.10.0 architecture.
+
 ## Scope
-I reviewed the key source modules (`src/timer_event/event_thread.py`, `src/timer_event/timer_event.py`, `src/timer_event/__init__.py`), the unit tests under `tests/`, and the packaging/configuration files (`pyproject.toml`, `setup.cfg`, `setup.py`, `README.md`). The recommendations below target correctness, performance, extensibility, and day-to-day developer ergonomics.
+I reviewed the key source modules (`src/timer_event/event_thread.py`, `src/timer_event/timer_event.py`, `src/timer_event/__init__.py`), the unit tests under `tests/`, and the packaging/configuration files (`pyproject.toml`, `setup.cfg`, `setup.py`, `README.md`). The recommendations below target correctness, performance, extensibility, and day-to-day developer ergonomics. All actionable items have since been implemented unless they are explicitly called out in the Stage P2 plan.
 
 ## High-Priority Findings
 - `EventThread` iterates through `__subscribers` without holding a lock, so concurrent subscribe/unsubscribe operations can raise `RuntimeError` or produce missed callbacks. It also reuses the same `packet` dict for every subscriber, letting one handler mutate the payload seen by others (`src/timer_event/event_thread.py:197`).

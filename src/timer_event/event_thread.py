@@ -1,130 +1,156 @@
 #!/usr/bin/env python3
-"""
-This module provides a thread-safe Event class for managing and triggering
-events with callback routines.
+"""Thread-safe event dispatch primitives with backpressure and metrics hooks.
 
-Author: Erol Yesin
-Version: 0.9.1
+Example
+=======
+>>> from timer_event import EventThread
+>>> with EventThread(
+...     "alerts",
+...     max_queue_size=128,
+...     overflow_policy="drop_oldest",
+...     error_policy="continue",
+... ) as bus:
+...     handle = bus.subscribe("printer", lambda packet: print(packet["payload"]))
+...     bus.post({"msg": "ready"})
+...     handle.unsubscribe()
 
-Classes:
-    EventThread:    A class for creating and managing events with 
-                    callback routines.
-    Example:
-        >>> from time import sleep
-        ...
-        >>> def my_callback(packet):
-        ... ... print(packet["payload"])
-        ...
-        >>> ev = EventThread("example")
-        >>> ev.subscribe("example_subscriber", my_callback)
-        >>> ev.post("Hello, world!")
-        >>> ### The sleep prevents race condition where the callback might 
-        >>> ### get unsubscribed before the broadcast process
-        >>> sleep(0.1)
-        Hello, world!
-        >>> ev.unsubscribe("example_subscriber")
-        >>> ev.post("This won't be printed")
-        >>> sleep(0.1)
-        >>> ev.stop()
-        ...
+The dispatcher runs on a dedicated thread, buffering posts in ``queue.Queue``
+with configurable overflow policies. Subscriptions return lightweight handles,
+and lifecycle utilities such as ``stop(wait=False)``, ``is_paused``, and
+``queue_size`` enable tight runtime control.
 
+Copyright (c) 2023.  Erol Yesin/SandboxZilla
 
-    Copyright (c) 2023.  Erol Yesin/SandboxZilla
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so.
 
-    Permission is hereby granted, free of charge, to any person obtaining a
-    copy of this software and associated documentation files (the "Software"),
-    to deal in the Software without restriction, including without limitation
-    the rights to use, copy, modify, merge, publish, distribute, sublicense,
-    and/or sell copies of the Software, and to permit persons to whom the
-    Software is furnished to do so.
-
-    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR 
-    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-    FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-    DEALINGS IN THE SOFTWARE.
-
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
 """
 
 __author__ = "Erol Yesin"
 __version__ = "0.9.1"
 
-from typing import Any, Union
-from queue import Queue
-from threading import Thread, Lock
+from typing import Any, Callable, Dict, Optional, Tuple, Union
+from queue import Queue, Full, Empty
+from threading import Thread, Lock, Event as ThreadEvent, current_thread
+import logging
+
+LOGGER = logging.getLogger(__name__)
+
+_STOP_SENTINEL = object()
+
+_VALID_OVERFLOW_POLICIES = {"block", "drop_newest", "drop_oldest", "error"}
+_VALID_ERROR_POLICIES = {"continue", "stop", "raise"}
+
+
+class SubscriptionHandle:
+    """
+    Lightweight wrapper returned by ``EventThread.subscribe`` for ergonomic
+    unsubscription without tracking string names manually.
+    """
+
+    __slots__ = ("__event_thread", "__name", "__active", "__lock")
+
+    def __init__(self, event_thread: "EventThread", name: str):
+        self.__event_thread = event_thread
+        self.__name = name
+        self.__active = True
+        self.__lock = Lock()
+
+    @property
+    def name(self) -> str:
+        return self.__name
+
+    @property
+    def active(self) -> bool:
+        with self.__lock:
+            return self.__active
+
+    def unsubscribe(self) -> None:
+        with self.__lock:
+            if not self.__active:
+                return
+            self.__active = False
+        self.__event_thread.unsubscribe(self.__name)
+
+    def __repr__(self) -> str:
+        state = "active" if self.active else "inactive"
+        return f"<SubscriptionHandle name={self.__name!r} state={state}>"
 
 
 class EventThread(Thread):
-    """
-        A class for creating and managing events with callback routines.
-        The broadcasts are processed in a separate thread from the thread
-        that receives the post, to eliminate any callback affecting the
-        posting thread.  However, any wrongly written callback routine
-        would affect the other callback routines, which share the same
-        thread.
+    """Thread-backed publish/subscribe dispatcher.
 
-        Attributes:
-            __packet (dict):    A template dictionary containing included
-                                in each event broadcasting to each callback.
-                                this dictionary includes all parameters passed
-                                during initialiation of the EventThread 
-                                instantiation.
-                                The basic packet dictionary includes:
-                                "event" =   The event name
-                                "dest"  =   The callback
-                                "payload" = The object included in the post
-                                "cookie" =  The cookie if included when subscribing
-            __subscribers (dict):   A dictionary of dictionaries containing the
-                                    subscribers' name and callback routines.
-            __continue_thread (bool):   A flag indicating whether the thread 
-                                        should continue running.
-            __pause_broadcasting (bool):    A flag indicating that event should
-                                            pause broadcasting
-            __lock (Lock): A lock for thread safety.
-            __queue (Queue): A queue for storing events.
+    `EventThread` decouples producers from subscribers by queuing posts inside
+    ``queue.Queue`` and delivering them on a dedicated worker thread. The API
+    supports:
 
-        Methods:
-            __post():
-                Internal runner for processing the queued events.
-            __call__(payload, **kwargs) -> EventThread:
-                Calls an event with a payload and optional arguments.
-            __iadd__(handler: (dict, callable)) -> EventThread:
-                Adds a subscription.
-            __isub__(handler: (dict, callable, str)) -> EventThread:
-                Removes the subscription.
-            subscribe(name: str, on_event: callable, cookie: Any = None) -> EventThread:
-                Subscribes to an event with a callback routine and an optional cookie.
-            unsubscribe(name: str) -> EventThread:
-                Unsubscribes from an event.
-            post(payload, **kwargs) -> EventThread:
-                Posts an event with a payload and optional arguments into queue 
-                for processing.
-            pause() -> EventThread:
-                Pauses broadcasting events
-            unpause() -> EventThread:
-                Unpauses the event to continue broadcasting events
-            stop():
-                Stops the event processing thread, clears the subscribers list.
-                Note:   This can not be used as pause.  Once the EventThread 
-                        instance is stopped it can not be restarted.
-                        A new instance must be created after calling stop to
-                        continue eventing, but the subscribers list will be lost
+    * Optional queue backpressure (`max_queue_size`, `overflow_policy`).
+    * Configurable failure handling (`error_policy`, `on_error`).
+    * Success instrumentation via `on_dispatch`.
+    * Lightweight subscription handles for ergonomic teardown.
+    * Lifecycle helpers (`pause`, `unpause`, `stop(wait=...)`, context manager
+      support, `is_running`, `queue_size`, etc.).
     """
 
-    def __init__(self, name: str, **kwargs):
+    def __init__(self,
+                 name: str,
+                 *,
+                 max_queue_size: Optional[int] = None,
+                 overflow_policy: str = "block",
+                 error_policy: str = "continue",
+                 on_error: Optional[Callable[[Exception, str, Dict[str, Any]], None]] = None,
+                 on_dispatch: Optional[Callable[[str, Dict[str, Any]], None]] = None,
+                 **kwargs):
         """
         Initializes the EventThread object.
 
         Args:
             name (str): The name of the event.
+            max_queue_size (Optional[int]): Maximum number of packets permitted
+                in the queue. If ``None`` (default) the queue is unbounded.
+            overflow_policy (str): Behaviour when the queue is full.
+                Supported values: ``"block"`` (default), ``"drop_newest"``,
+                ``"drop_oldest"``, ``"error"``.
+            error_policy (str): Behaviour when a subscriber raises an
+                exception. Supported values: ``"continue"`` (default),
+                ``"stop"``, ``"raise"``.
+            on_error (Optional[Callable]): Optional callback invoked with
+                ``(exc, subscriber_name, packet_copy)`` when a handler raises.
+            on_dispatch (Optional[Callable]): Optional hook invoked after
+                a subscriber successfully processes a packet. Receives
+                ``(subscriber_name, packet_copy)``.
             **kwargs: Optional arguments for the event packet.
 
         Returns:
             None
         """
         self.__lock = Lock()
+        self.__pause_event = ThreadEvent()
+        self.__pause_event.set()
+
+        self.__overflow_policy = overflow_policy.lower()
+        if self.__overflow_policy not in _VALID_OVERFLOW_POLICIES:
+            raise ValueError(f"Invalid overflow_policy '{overflow_policy}'. "
+                             f"Expected one of {_VALID_OVERFLOW_POLICIES}")
+
+        self.__error_policy = error_policy.lower()
+        if self.__error_policy not in _VALID_ERROR_POLICIES:
+            raise ValueError(f"Invalid error_policy '{error_policy}'. "
+                             f"Expected one of {_VALID_ERROR_POLICIES}")
+
+        self.__on_error = on_error
+        self.__on_dispatch = on_dispatch
 
         self.__packet = kwargs
         self.__packet["event"] = name
@@ -136,14 +162,19 @@ class EventThread(Thread):
             self.__packet["cookie"] = None
 
         self.__subscribers: dict = {}
-        self.__continue_thread = True
-        self.__pause_broadcasting = False
-        self.__queue = Queue()
+        self.__running = True
+        self.__paused = False
 
-        super().__init__(name=self.__packet["event"] + "T", target=self.__post)
+        if max_queue_size is not None and max_queue_size < 0:
+            raise ValueError("'max_queue_size' must be non-negative or None")
+        queue_size = 0 if max_queue_size in (None, 0) else max_queue_size
+        self.__queue = Queue(maxsize=queue_size)
+        self.__max_queue_size = queue_size
+
+        super().__init__(name=self.__packet["event"] + "T", target=self.__post, daemon=True)
         self.start()
 
-    def subscribe(self, name: str, on_event: callable, cookie: Any = None) -> 'EventThread':
+    def subscribe(self, name: str, on_event: callable, cookie: Any = None) -> SubscriptionHandle:
         """
         Subscribe to an event with a callback routine and an optional cookie.
 
@@ -155,11 +186,13 @@ class EventThread(Thread):
             cookie (Any):   Optional cookie passed to the callback routine 
                             in the packet.
         Returns:
-            self: The EventThread instance.
+            SubscriptionHandle: Handle that can be used to unsubscribe.
         """
         with self.__lock:
+            if name in self.__subscribers:
+                raise ValueError(f"Subscriber '{name}' already exists for event '{self.__packet['event']}'")
             self.__subscribers[name] = {"on_event": on_event, "cookie": cookie}
-        return self
+        return SubscriptionHandle(self, name)
 
     def unsubscribe(self, name: str) -> 'EventThread':
         """
@@ -183,15 +216,41 @@ class EventThread(Thread):
         Returns:
             None
         """
-        while self.__continue_thread:
-            packet = self.__queue.get()
-            if packet["payload"] is not None and not self.__pause_broadcasting:
-                for name, handler in self.__subscribers.items():
-                    packet["dest"] = name
-                    packet["cookie"] = handler["cookie"]
-                    handler["on_event"](packet)
-            elif self.__pause_broadcasting:
-                pass
+        try:
+            while True:
+                packet = self.__queue.get()
+                if packet is _STOP_SENTINEL:
+                    break
+
+                self.__pause_event.wait()
+
+                with self.__lock:
+                    subscribers: Tuple[Tuple[str, Dict[str, Any]], ...] = tuple(self.__subscribers.items())
+
+                stop_requested = False
+                for name, handler in subscribers:
+                    packet_for_handler = packet.copy()
+                    packet_for_handler["dest"] = name
+                    packet_for_handler["cookie"] = handler.get("cookie")
+                    callback = handler.get("on_event")
+                    try:
+                        callback(packet_for_handler)
+                        self.__notify_dispatch(name, packet_for_handler)
+                    except Exception as exc:
+                        self.__handle_callback_exception(exc, name, packet_for_handler)
+                        if self.__error_policy == "raise":
+                            raise
+                        if self.__error_policy == "stop":
+                            stop_requested = True
+                            break
+
+                if stop_requested:
+                    break
+        finally:
+            with self.__lock:
+                self.__running = False
+                self.__subscribers.clear()
+            self.__pause_event.set()
 
     def post(self, payload, **kwargs):
         """
@@ -204,11 +263,14 @@ class EventThread(Thread):
         Returns:
             self: The EventThread instance.
         """
+        if not self.__running:
+            raise RuntimeError("EventThread has been stopped")
+
         with self.__lock:
             packet = self.__packet.copy()
             packet.update(kwargs)
             packet["payload"] = payload
-            self.__queue.put_nowait(packet)
+        self.__enqueue(packet)
         return self
 
     def __call__(self, payload, **kwargs):
@@ -275,18 +337,38 @@ class EventThread(Thread):
         self.unsubscribe(handler)
         return self
 
-    def stop(self):
+    def stop(self, wait: bool = True):
         """
-        Stops the event processing thread, clears the subscribers list, 
-        and joins the thread.
-        
+        Stops the event processing thread, clears the subscribers list,
+        and optionally joins the thread (if called from outside the dispatcher).
+
+        Args:
+            wait (bool): When ``True`` (default), block until the dispatcher
+                thread terminates. When ``False``, signal shutdown and return
+                immediately while the dispatcher exits in the background.
+
         Returns:
             None
         """
-        if self.__continue_thread:
-            self.__continue_thread = False
-            self.post(None)
+        with self.__lock:
+            if self.__running:
+                self.__running = False
+                should_signal = True
+            else:
+                should_signal = False
+
+        if not should_signal:
+            if wait and self.is_alive() and self is not current_thread():
+                self.join()
+            return
+
+        self.__pause_event.set()
+        self.__enqueue(_STOP_SENTINEL, bypass_overflow=True)
+
+        if wait and self is not current_thread():
             self.join()
+
+        with self.__lock:
             self.__subscribers.clear()
 
     def pause(self):
@@ -297,7 +379,8 @@ class EventThread(Thread):
             self: The EventThread instance.
         """
         with self.__lock:
-            self.__pause_broadcasting = True
+            self.__paused = True
+        self.__pause_event.clear()
         return self
 
     def unpause(self):
@@ -307,8 +390,91 @@ class EventThread(Thread):
         Returns:
             self: The EventThread instance.
         """
-        self.__pause_broadcasting = False
+        with self.__lock:
+            self.__paused = False
+        self.__pause_event.set()
         return self
+
+    def __enqueue(self, item: Any, bypass_overflow: bool = False) -> None:
+        """
+        Enqueue a packet respecting overflow policy.
+        """
+        if bypass_overflow or self.__max_queue_size == 0:
+            self.__queue.put(item)
+            return
+
+        if self.__overflow_policy == "block":
+            self.__queue.put(item)
+            return
+
+        while True:
+            try:
+                self.__queue.put_nowait(item)
+                return
+            except Full:
+                if self.__overflow_policy == "drop_newest":
+                    LOGGER.warning("Dropping newest event for '%s' due to full queue", self.__packet["event"])
+                    return
+                if self.__overflow_policy == "error":
+                    raise RuntimeError("Event queue is full")
+                if self.__overflow_policy == "drop_oldest":
+                    try:
+                        self.__queue.get_nowait()
+                    except Empty:
+                        continue
+                else:
+                    raise RuntimeError(f"Unhandled overflow policy '{self.__overflow_policy}'")
+
+    def __handle_callback_exception(self, exc: Exception, subscriber: str, packet: Dict[str, Any]) -> None:
+        """
+        Handle exceptions thrown by subscriber callbacks according to the
+        configured error policy.
+        """
+        if self.__on_error:
+            try:
+                self.__on_error(exc, subscriber, packet)
+            except Exception:  # pragma: no cover - defensive
+                LOGGER.exception("Exception in on_error handler for subscriber '%s'", subscriber)
+
+        LOGGER.exception("Subscriber '%s' raised an exception", subscriber, exc_info=exc)
+
+    def __notify_dispatch(self, subscriber: str, packet: Dict[str, Any]) -> None:
+        if not self.__on_dispatch:
+            return
+        try:
+            self.__on_dispatch(subscriber, packet.copy())
+        except Exception:  # pragma: no cover - defensive
+            LOGGER.exception("Exception in on_dispatch handler for subscriber '%s'", subscriber)
+
+    @property
+    def is_paused(self) -> bool:
+        with self.__lock:
+            return self.__paused
+
+    @property
+    def is_running(self) -> bool:
+        with self.__lock:
+            return self.__running
+
+    @property
+    def subscriber_count(self) -> int:
+        with self.__lock:
+            return len(self.__subscribers)
+
+    @property
+    def queue_size(self) -> int:
+        return self.__queue.qsize()
+
+    @property
+    def max_queue_size(self) -> Optional[int]:
+        return None if self.__max_queue_size == 0 else self.__max_queue_size
+
+    def __enter__(self) -> "EventThread":
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> bool:
+        self.stop()
+        return False
 
 
 if __name__ == "__main__":

@@ -25,12 +25,18 @@ classDiagram
     class EventThread {
         -__packet: dict
         -__subscribers: Dict[str, Dict[str, Any]]
-        -__continue_thread: bool
-        -__pause_broadcasting: bool
+        -__running: bool
+        -__paused: bool
+        -__pause_event: threading.Event
         -__lock: Lock
         -__queue: Queue
-        +__init__(name: str, **kwargs)
-        +subscribe(name: str, on_event: Callable, cookie: Any = None)
+        -__max_queue_size: int
+        -__overflow_policy: str
+        -__error_policy: str
+        -__on_error: Optional[Callable]
+        -__on_dispatch: Optional[Callable]
+        +__init__(name: str, max_queue_size: Optional[int] = None, ...)
+        +subscribe(name: str, on_event: Callable, cookie: Any = None) SubscriptionHandle
         +unsubscribe(name: str)
         +post(payload, **kwargs)
         +__call__(payload, **kwargs)
@@ -38,17 +44,33 @@ classDiagram
         +__isub__(handler)
         +pause()
         +unpause()
-        +stop()
+        +stop(wait: bool = True)
+        +subscriber_count: int
+        +queue_size: int
+        +max_queue_size: Optional[int]
+        +__enter__()
+        +__exit__()
         -__post()
+        -__notify_dispatch()
     }
     class TimerEvent {
         -__kwargs: dict
         -__interval: float
+        -__interval_lock: threading.Lock
         -__done: threading.Event
-        -__timer: threading.Timer
-        +__init__(interval: float, name: str = None, **kwargs)
-        -__run()
-        +stop()
+        -__wake: threading.Event
+        -__ticker_lock: threading.Lock
+        -__ticker_thread: Optional[threading.Thread]
+        -__ticker_started: bool
+        -__emit_immediately: bool
+        +__init__(interval: float, name: str = None, auto_start: bool = True, **kwargs)
+        +start_timer()
+        +change_interval(interval: float, apply_immediately: bool = False)
+        +stop(wait: bool = True)
+        +is_timer_running()
+        +__enter__()
+        -__run_loop()
+        -__current_interval()
     }
     EventThread <|-- TimerEvent
 ```
@@ -67,15 +89,18 @@ sequenceDiagram
     Poster->>Queue: put_nowait(packet)
     loop until __continue_thread is False
         Dispatcher->>Queue: get()
-        alt payload is None
-            Dispatcher->>Dispatcher: sentinel -> break loop
-        else paused flag true
-            Dispatcher->>Dispatcher: discard packet
+        alt stop sentinel
+            Dispatcher->>Dispatcher: break
         else
+            opt paused
+                Dispatcher->>PauseEvent: wait()
+            end
             loop for name, handler in Registry
-                Dispatcher->>Dispatcher: packet["dest"]=name
-                Dispatcher->>Dispatcher: packet["cookie"]=handler["cookie"]
-                Dispatcher->>Callback: handler["on_event"](packet)
+                Dispatcher->>Dispatcher: clone packet
+                Dispatcher->>Callback: handler(packet_copy)
+                opt metrics
+                    Dispatcher->>Metrics: on_dispatch(subscriber, packet copy)
+                end
             end
         end
     end
@@ -100,32 +125,38 @@ stateDiagram-v2
 sequenceDiagram
     participant Init as TimerEvent.__init__
     participant Base as EventThread.__init__
-    participant Timer as threading.Timer
-    participant Done as threading.Event
+    participant Ticker as internal ticker thread
+    participant Wake as wake event
+    participant Done as stop event
     participant Dispatcher as EventThread.__post
 
     Init->>Base: super().__init__(interval=..., **kwargs)
-    Init->>Done: instantiate (unset)
-    Init->>Timer: create(function=__run, interval, **kwargs)
-    Init->>Timer: start()
-    loop while not Done.is_set()
-        Timer->>Init: __run()
-        Init->>Dispatcher: post(time())
+    Init->>Ticker: start_timer() (auto-start optional)
+    loop until Done set
+        Ticker->>Wake: wait(current interval)
+        alt wake triggered
+            Wake->>Ticker: interval changed or stop requested
+            opt emit immediately
+                Ticker->>Dispatcher: post(time())
+            end
+        else interval elapsed
+            Ticker->>Dispatcher: post(time())
+        end
     end
-    Init->>Done: set() on stop()
+    Init->>Done: set()
     Init->>Base: super().stop()
-    Init->>Timer: join()
 ```
 
 ## Data Structures & Concurrency Notes
 - **Packet Template (`__packet`)** – Mutable dictionary seeded during construction (`event`, optional metadata). Each `post` copies the template, merges overrides, and writes the current `payload`.
-- **Subscriber Registry (`__subscribers`)** – Maps subscriber name to a dictionary containing `on_event` and `cookie`. Access is serialized with `__lock` for modifications but iteration occurs without taking a snapshot.
-- **Queue (`__queue`)** – Unbounded `queue.Queue` used to hand off work between producers and the dispatcher thread.
-- **Flags** – `__continue_thread` governs the dispatcher loop; `__pause_broadcasting` toggled by `pause()` / `unpause()` without locking in the latter.
-- **Timer Coordination** – `TimerEvent` retains arbitrary `**kwargs` both for packet defaults and for `threading.Timer`, so callers must avoid keys unsupported by the timer constructor.
+- **Subscriber Registry (`__subscribers`)** – Maps subscriber name to a dictionary containing `on_event` and `cookie`. Access is serialized with `__lock`; the dispatcher snapshots the mapping before iterating to tolerate concurrent subscription churn.
+- **Queue (`__queue`)** – `queue.Queue` whose `maxsize` is governed by `max_queue_size`; overflow policy determines whether writers block, drop packets, or raise.
+- **Pause Control** – `__pause_event` gates dispatch; while cleared, the dispatcher blocks before invoking subscribers but continues accepting posts into the queue.
+- **Error Handling** – `__error_policy` chooses between continuing, stopping, or re-raising on subscriber failure; `__on_error` is invoked on each exception.
+- **Metrics Hook** – optional `on_dispatch` callback executes after each successful subscriber invocation, receiving a copy of the packet for external observability.
+- **Timer Coordination** – `TimerEvent` drives posting through a dedicated ticker thread that waits on `__wake`/`__done` events and respects runtime interval changes.
 
 ## Known Limitations (Informing Future Work)
-- Dispatcher iterates over `__subscribers` while holding no lock; concurrent modification can raise `RuntimeError`.
-- Paused events are discarded permanently; there is no buffering or backpressure mechanism.
-- Callback exceptions propagate and terminate the dispatcher thread.
-- `TimerEvent` begins emitting immediately upon construction and cannot restart once stopped.
+- `queue_size` relies on `Queue.qsize()`, which is an approximation on some Python implementations; treat it as advisory telemetry.
+- `on_dispatch` exceptions are logged but otherwise ignored to preserve delivery guarantees.
+- `TimerEvent` instances cannot be restarted once `stop()` (or context exit) has been invoked; construct a new timer instead.

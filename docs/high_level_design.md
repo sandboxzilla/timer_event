@@ -30,9 +30,9 @@ flowchart LR
 ```
 
 ## Core Responsibilities
-- **EventThread** – Owns the dispatcher thread, queue, and subscriber registry. Accepts posts from any thread and forwards packets to each subscriber sequentially.
-- **TimerEvent** – Subclass of `EventThread` that schedules periodic posts using `threading.Timer` and coordinates shutdown through `threading.Event`.
-- **Subscribers** – Client-provided callables invoked with the packet dictionary assembled by `EventThread`.
+- **EventThread** – Owns the dispatcher thread, queue, and subscriber registry. Accepts posts from any thread and forwards packets to each subscriber sequentially. `subscribe()` returns a `SubscriptionHandle` for ergonomic tear-down.
+- **TimerEvent** – Subclass of `EventThread` that runs a controllable ticker thread. It supports lazy start (`auto_start=False` + `start_timer()`), dynamic interval changes, and share the same queue/error policies as `EventThread`.
+- **Subscribers** – Client-provided callables invoked with per-subscriber packet copies assembled by `EventThread`.
 
 ## Event Dispatch Sequence
 ```mermaid
@@ -47,12 +47,18 @@ sequenceDiagram
     EventThread->>EventThread: merge template + overrides
     EventThread->>Queue: put_nowait(packet)
     Dispatcher->>Queue: get()
-    alt payload is not None AND not paused
+    alt packet is stop sentinel
+        Dispatcher->>Dispatcher: break loop
+    else dispatch cycle
+        opt paused
+            Dispatcher->>PauseGate: wait until unpaused
+        end
         loop for each subscriber
             Dispatcher->>Subscriber: on_event(packet with dest/cookie)
+            opt metrics hook
+                Dispatcher->>Metrics: on_dispatch(subscriber, packet copy)
+            end
         end
-    else paused or null payload
-        Dispatcher->>Dispatcher: discard packet
     end
 ```
 
@@ -61,25 +67,34 @@ sequenceDiagram
 sequenceDiagram
     participant Caller as Caller
     participant TimerEvent as TimerEvent.__init__
-    participant Timer as threading.Timer
-    participant Done as threading.Event
     participant Dispatcher as EventThread Dispatcher
+    participant Ticker as Internal Ticker Thread
+    participant Wake as Wake Event
+    participant Done as Stop Event
 
-    Caller->>TimerEvent: TimerEvent(interval, name?, **kwargs)
+    Caller->>TimerEvent: TimerEvent(interval, auto_start?, **kwargs)
     TimerEvent->>Dispatcher: super().__init__(interval=..., **kwargs)
-    TimerEvent->>Timer: start(function=__run, interval)
-    loop every interval
-        Timer->>TimerEvent: __run()
-        TimerEvent->>Dispatcher: post(time())
+    TimerEvent->>Ticker: start_timer() (auto_start optional)
+    loop until Done set
+        Ticker->>Wake: wait(current_interval)
+        alt wake triggered
+            Wake->>Ticker: interval change or stop
+            opt apply immediately
+                Ticker->>Dispatcher: post(time())
+            end
+        else interval elapsed
+            Ticker->>Dispatcher: post(time())
+        end
     end
     Caller->>TimerEvent: stop()
     TimerEvent->>Done: set()
     TimerEvent->>Dispatcher: super().stop()
-    TimerEvent->>Timer: join()
 ```
 
 ## Deployment & Integration Considerations
 - All callbacks execute on the dispatcher thread. Long-running or blocking work should be delegated to worker pools to prevent stalling other subscribers.
-- Pausing currently drops queued packets; use `stop()` when lossless shutdown is required.
-- Each `TimerEvent` instance creates both a dispatcher thread (inherited) and a dedicated `threading.Timer` thread; budget thread resources accordingly.
-- The package is thread-safe at the API boundary (queue protects posts), but subscriber mutation during dispatch shares the packet object and must be handled carefully by consumers.
+- Pausing blocks dispatch until `unpause()` is called; buffered events accumulate based on the configured overflow policy (`block`, `drop_newest`, `drop_oldest`, `error`).
+- Use introspection helpers (`queue_size`, `max_queue_size`, `subscriber_count`, `is_running`, `is_paused`) plus `on_dispatch` to feed observability pipelines.
+- Context manager support (`with EventThread(...)`) guarantees cleanup; `stop(wait=False)` enables non-blocking shutdown when needed.
+- Each `TimerEvent` instance creates both a dispatcher thread (inherited) and an internal ticker thread; budget thread resources accordingly.
+- The package is thread-safe at the API boundary (queue protects posts), and subscribers receive per-handler packet copies to avoid mutation bleed.

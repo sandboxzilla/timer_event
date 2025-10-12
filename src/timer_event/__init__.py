@@ -41,5 +41,7 @@ FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 """
 
-from .event_thread import EventThread
+from .event_thread import EventThread, SubscriptionHandle
 from .timer_event import TimerEvent
+
+__all__ = ["EventThread", "TimerEvent", "SubscriptionHandle"]

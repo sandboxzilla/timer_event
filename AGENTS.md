@@ -15,6 +15,10 @@ Follow PEP 8 with four-space indentation and descriptive, lower_snake_case symbo
 ## Testing Guidelines
 Use the standard-library `unittest` framework already present in `tests/`. Name new files `test_<module>.py` and test methods `test_<behavior>` so they auto-discover cleanly. Favor deterministic tests: keep sleep intervals minimal, guard against race conditions with synchronization primitives, and assert both subscriber side effects and thread teardown (e.g., call `stop()`).
 
+## QA and Bug Reporting
+
+For detailed information on the QA process, bug reporting policy, and formatting guidelines, please refer to the `docs/qa_policy.md` document.
+
 ## Commit & Pull Request Guidelines
 Recent history favors concise, Title Case subject lines (e.g., “Add Timer Cleanup Hook”); keep them under ~70 characters and use present tense. Reference issues inline (`Fix race in TimerEvent (#45)`) and describe behavioral changes plus test coverage in the commit body or PR description. Each PR should note reproduction steps, new/updated tests, documentation updates, and any concurrency implications or cleanup steps for the reviewers.
 
